@@ -121,7 +121,7 @@ function scheduleSearch(query) {
   searchDebounceTimer = setTimeout(() => {
     searchDebounceTimer = null;
     fetchSuggestions(query);
-  }, 250);
+  }, 500);
 }
 
 searchInput.addEventListener('input', function () {
