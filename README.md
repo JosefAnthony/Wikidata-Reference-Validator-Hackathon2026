@@ -136,7 +136,7 @@ When you are signed in with Wikimedia, a **History** link appears in the
 navigation bar. It shows:
 
 * **Search history** — every item you validate, with alive, unreachable, and
-  archived reference counts.
+  archived reference counts. Paginated at 10 items per page.
 * **Edit history** — every Edit link you open, including the reference URL
   before the edit. After you save the change on Wikidata and validate the item
   again, the validator compares the new references with the saved snapshot and

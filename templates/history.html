@@ -16,7 +16,7 @@
     <header class="history__head">
       <div>
         <h2 id="searchesTitle">Search history</h2>
-        <p>Items you validated with the tool.</p>
+        <p>Items you validated with the tool{% if search_total %} · {{ search_total }} total{% endif %}.</p>
       </div>
       {% if searches %}
       <form method="post" action="{{ url_for('clear_history') }}"
@@ -55,6 +55,35 @@
       </li>
       {% endfor %}
     </ol>
+
+    {% if search_total_pages > 1 %}
+    <nav class="history-pagination" aria-label="Search history pagination">
+      <p class="history-pagination__summary">
+        Showing {{ search_start }}–{{ search_end }} of {{ search_total }}
+      </p>
+      <div class="history-pagination__pages">
+        {% if search_page > 1 %}
+        <a class="history-pagination__link"
+           href="{{ url_for('history', page=search_page - 1) }}#searches"
+           rel="prev">← Previous</a>
+        {% else %}
+        <span class="history-pagination__link is-disabled" aria-disabled="true">← Previous</span>
+        {% endif %}
+
+        <span class="history-pagination__status">
+          Page {{ search_page }} of {{ search_total_pages }}
+        </span>
+
+        {% if search_page < search_total_pages %}
+        <a class="history-pagination__link"
+           href="{{ url_for('history', page=search_page + 1) }}#searches"
+           rel="next">Next →</a>
+        {% else %}
+        <span class="history-pagination__link is-disabled" aria-disabled="true">Next →</span>
+        {% endif %}
+      </div>
+    </nav>
+    {% endif %}
     {% else %}
     <div class="history__empty">
       <i class="bi bi-search" aria-hidden="true"></i>

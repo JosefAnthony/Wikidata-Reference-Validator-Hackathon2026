@@ -38,6 +38,7 @@ app.config.update(
 # History is stored locally in SQLite. It is keyed to the Wikimedia user ID
 # and never contains OAuth tokens or other credentials.
 HISTORY_DB_PATH = os.path.join(app.instance_path, "history.db")
+SEARCH_HISTORY_PAGE_SIZE = 10
 HISTORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS search_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -707,7 +708,7 @@ def reconcile_pending_edits(qid, results):
         app.logger.warning("Could not reconcile edit history", exc_info=True)
 
 
-def fetch_search_history(user_id, limit=100):
+def fetch_search_history(user_id, limit=100, offset=0):
     try:
         with _history_db() as conn:
             rows = conn.execute(
@@ -717,14 +718,27 @@ def fetch_search_history(user_id, limit=100):
                 FROM search_history
                 WHERE user_id = ?
                 ORDER BY created_at DESC, id DESC
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """,
-                (user_id, limit),
+                (user_id, limit, offset),
             ).fetchall()
             return [dict(row) for row in rows]
     except Exception:
         app.logger.warning("Could not load search history", exc_info=True)
         return []
+
+
+def count_search_history(user_id):
+    try:
+        with _history_db() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS total FROM search_history WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            return int(row["total"]) if row else 0
+    except Exception:
+        app.logger.warning("Could not count search history", exc_info=True)
+        return 0
 
 
 def fetch_edit_history(user_id, limit=100):
@@ -800,10 +814,36 @@ def history():
     user = _history_user()
     if not user:
         return redirect(url_for("login"))
+
+    total_searches = count_search_history(user["id"])
+    total_pages = max(
+        1,
+        (total_searches + SEARCH_HISTORY_PAGE_SIZE - 1)
+        // SEARCH_HISTORY_PAGE_SIZE,
+    )
+    page = request.args.get("page", default=1, type=int) or 1
+    page = min(max(page, 1), total_pages)
+
+    searches = fetch_search_history(
+        user["id"],
+        limit=SEARCH_HISTORY_PAGE_SIZE,
+        offset=(page - 1) * SEARCH_HISTORY_PAGE_SIZE,
+    )
+    search_start = (
+        (page - 1) * SEARCH_HISTORY_PAGE_SIZE + 1
+        if total_searches else 0
+    )
+    search_end = min(page * SEARCH_HISTORY_PAGE_SIZE, total_searches)
+
     return render_template(
         "history.html",
-        searches=fetch_search_history(user["id"]),
+        searches=searches,
         edits=fetch_edit_history(user["id"]),
+        search_page=page,
+        search_total=total_searches,
+        search_total_pages=total_pages,
+        search_start=search_start,
+        search_end=search_end,
     )
 
 
