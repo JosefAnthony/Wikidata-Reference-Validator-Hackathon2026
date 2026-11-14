@@ -12,6 +12,22 @@ This tool checks the external reference URLs on a Wikidata item (QID) to determi
 * ❌ Flags dead links and shows which statement they belong to
 * ✏️ Provides a one-click "Edit" button to fix or update the reference
 
+## ⚡ External response caching
+
+The Flask backend keeps a process-local, in-memory cache for Wikidata autocomplete
+results, Wikidata item/property labels, and Wayback Machine snapshot results.
+Entries expire after one hour, and the cache evicts least-recently-used entries
+when it exceeds 500 entries. Successful “no snapshot found” Wayback responses
+are cached too; failed external requests are not.
+
+To bypass cached data and refresh results from the external services, add
+`?refresh=1` to the app URL (for example,
+`http://127.0.0.1:5000/?refresh=1`). The autocomplete and validation requests
+honor this flag, including label and Wayback lookups during validation. Without
+the flag, expired entries are fetched again automatically.
+
+The cache is per running Flask process and is cleared when the process restarts.
+
 ---
 
 ## 🧪 Live Demo
@@ -170,5 +186,4 @@ Help improve the quality of references on Wikidata by making it easier to detect
 ## 👨‍💻 Maintainer
 
 Josef Anthony
-
 

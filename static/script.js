@@ -1,6 +1,8 @@
 /**************************************
- * AUTOCOMPLETE SEARCH (UNCHANGED FLOW)
+ * AUTOCOMPLETE SEARCH
  **************************************/
+const refreshCache = new URLSearchParams(window.location.search).get("refresh") === "1";
+
 document.getElementById("search").addEventListener("input", async function () {
   const query = this.value;
   const suggestions = document.getElementById("suggestions");
@@ -8,14 +10,12 @@ document.getElementById("search").addEventListener("input", async function () {
 
   if (query.length < 3) return;
 
-  const response = await fetch(
-    `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(
-      query
-    )}&language=en&format=json&origin=*`
-  );
+  const searchParams = new URLSearchParams({ q: query });
+  if (refreshCache) searchParams.set("refresh", "1");
+  const response = await fetch(`/search?${searchParams}`);
   const data = await response.json();
 
-  data.search.forEach(item => {
+  data.forEach(item => {
     const li = document.createElement("li");
     li.className = "list-group-item list-group-item-action";
 
@@ -40,27 +40,8 @@ document.getElementById("search").addEventListener("input", async function () {
 });
 
 /**************************************
- * PROPERTY LABEL CACHE (UNCHANGED)
+ * Property and item labels are fetched and cached by the backend.
  **************************************/
-const propertyLabelCache = {};
-
-async function getPropertyLabel(pid) {
-  if (!pid) return "";
-  if (propertyLabelCache[pid]) return propertyLabelCache[pid];
-
-  try {
-    const response = await fetch(
-      `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${pid}&format=json&languages=en&origin=*`
-    );
-    const data = await response.json();
-    const label = data.entities[pid]?.labels?.en?.value || "";
-    propertyLabelCache[pid] = label;
-    return label;
-  } catch {
-    return "";
-  }
-}
-
 /**************************************
  * VALIDATE REFERENCES (FIXED + SAFE)
  **************************************/
@@ -105,7 +86,8 @@ async function validate() {
   const start = Date.now();
 
   try {
-    const response = await fetch("/validate", {
+    const validateUrl = refreshCache ? "/validate?refresh=1" : "/validate";
+    const response = await fetch(validateUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ qid })
