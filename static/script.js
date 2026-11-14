@@ -143,12 +143,14 @@ async function validate() {
 
     const aliveCount = data.filter(r => r.status === "alive").length;
     const deadCount = data.filter(r => r.status === "dead").length;
+    const archivedCount = data.filter(r => r.status === "dead" && r.suggestedArchive).length;
 
     localStorage.setItem("reportData", JSON.stringify({
       qid: qid || label,
       label,
       aliveCount,
       deadCount,
+      archivedCount,
       references: data,
       duration
     }));
@@ -172,13 +174,22 @@ async function validate() {
           </h3>
         </div>
 
-        <p>
+        <p class="d-flex flex-wrap gap-2 align-items-center mb-3">
           <span class="badge bg-success">
             <i class="bi bi-check-circle"></i> Alive: ${aliveCount}
           </span>
-          <span class="badge bg-danger ms-2">
+          <span class="badge bg-danger">
             <i class="bi bi-x-octagon"></i> Dead: ${deadCount}
           </span>
+          ${
+            deadCount > 0
+              ? `
+              <span class="badge bg-info text-dark">
+                <i class="bi bi-archive"></i> Archived available: ${archivedCount}/${deadCount}
+              </span>
+              `
+              : ""
+          }
         </p>
 
         <ul class="list-group mt-3">
@@ -218,10 +229,10 @@ async function validate() {
               ${
                 ref.status === "dead"
                   ? `
-                    <div class="mt-2 alert alert-warning p-2 mb-1">
+                    <div class="mt-2 alert alert-warning p-2 mb-2">
                       <i class="bi bi-exclamation-triangle me-1"></i>
                       <strong>Reference unavailable.</strong>
-                      Please review or update this reference.
+                      Please review or update this reference on Wikidata.
                     </div>
                   `
                   : ""
@@ -230,13 +241,57 @@ async function validate() {
               ${
                 ref.status === "dead" && ref.suggestedArchive
                   ? `
-                    <div class="mt-2 small">
-                      🔁 <strong>Suggested archived version:</strong>
-                      <a href="${ref.suggestedArchive.archiveUrl}"
-                         target="_blank"
-                         class="fw-semibold link-primary">
-                        View on Wayback Machine
-                      </a>
+                    <div class="mt-2 p-3 rounded bg-white border border-info shadow-sm">
+                      <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
+                        <div class="flex-grow-1">
+                          <div class="text-primary fw-bold mb-1">
+                            <i class="bi bi-archive-fill me-1"></i> Suggested Archive (Internet Archive):
+                          </div>
+                          <a href="${ref.suggestedArchive.archiveUrl}"
+                             target="_blank"
+                             class="fw-semibold link-primary text-break">
+                            ${ref.suggestedArchive.archiveUrl}
+                          </a>
+                          ${
+                            ref.suggestedArchive.archiveDateLabel || ref.suggestedArchive.archiveDate
+                              ? `
+                                <div class="text-muted small mt-1">
+                                  <i class="bi bi-calendar-event me-1"></i>
+                                  Snapshot Date: <strong>${ref.suggestedArchive.archiveDateLabel || ref.suggestedArchive.archiveDate}</strong>
+                                  ${
+                                    ref.suggestedArchive.archiveDate
+                                      ? ` &bull; Wikidata P2960: <code>${ref.suggestedArchive.archiveDate}</code>`
+                                      : ""
+                                  }
+                                </div>
+                              `
+                              : ""
+                          }
+                        </div>
+                        <div class="d-flex gap-2 align-self-start flex-wrap">
+                          <button class="btn btn-sm btn-outline-primary"
+                                  title="Copy Archive URL for Wikidata P1065"
+                                  onclick="copyArchiveUrl('${encodeURIComponent(ref.suggestedArchive.archiveUrl)}', this, 'URL')">
+                            <i class="bi bi-clipboard"></i> Copy URL
+                          </button>
+                          ${
+                            ref.suggestedArchive.archiveDate
+                              ? `
+                              <button class="btn btn-sm btn-outline-secondary"
+                                      title="Copy Archive Date for Wikidata P2960"
+                                      onclick="copyArchiveUrl('${encodeURIComponent(ref.suggestedArchive.archiveDate)}', this, 'Date')">
+                                <i class="bi bi-calendar-check"></i> Copy Date
+                              </button>
+                              `
+                              : ""
+                          }
+                          <a href="${ref.suggestedArchive.archiveUrl}"
+                             target="_blank"
+                             class="btn btn-sm btn-primary">
+                            <i class="bi bi-box-arrow-up-right"></i> Open Snapshot
+                          </a>
+                        </div>
+                      </div>
                     </div>
                   `
                   : ""
@@ -245,8 +300,22 @@ async function validate() {
               ${
                 ref.status === "dead" && !ref.suggestedArchive
                   ? `
-                    <div class="mt-2 small text-muted">
-                      📭 No archived snapshot found on Wayback Machine.
+                    <div class="mt-2 p-2 rounded bg-light border">
+                      <div class="mt-1 small text-muted mb-2">
+                        📭 No direct archived snapshot found on Wayback Machine.
+                      </div>
+                      <div class="d-flex gap-2 flex-wrap">
+                        <a href="https://web.archive.org/web/*/${encodeURIComponent(ref.url)}"
+                           target="_blank"
+                           class="btn btn-sm btn-outline-secondary">
+                          <i class="bi bi-search"></i> Search Wayback History
+                        </a>
+                        <a href="https://web.archive.org/save/${encodeURIComponent(ref.url)}"
+                           target="_blank"
+                           class="btn btn-sm btn-outline-secondary">
+                          <i class="bi bi-cloud-arrow-up"></i> Save to Wayback
+                        </a>
+                      </div>
                     </div>
                   `
                   : ""
@@ -302,6 +371,28 @@ document.addEventListener("hidden.bs.collapse", e => {
   );
   if (btn) btn.textContent = "Details";
 });
+
+/**************************************
+ * CLIPBOARD HELPER
+ **************************************/
+function copyArchiveUrl(encodedText, btn, type = "URL") {
+  const text = decodeURIComponent(encodedText);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      const originalHTML = btn.innerHTML;
+      btn.innerHTML = `<i class="bi bi-check-lg"></i> ${type} Copied!`;
+      btn.classList.add("btn-success");
+      setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.classList.remove("btn-success");
+      }, 2000);
+    }).catch(() => {
+      prompt(`Copy ${type}:`, text);
+    });
+  } else {
+    prompt(`Copy ${type}:`, text);
+  }
+}
 
 /**************************************
  * RESET SEARCH (UNCHANGED)
