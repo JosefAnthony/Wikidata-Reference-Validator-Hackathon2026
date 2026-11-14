@@ -1,84 +1,60 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>About - Wikidata Reference Validator</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
+{% extends "base.html" %}
 
-  <!-- Navbar -->
-  <nav class="navbar navbar-expand-lg glass-navbar shadow-sm fixed-top">
-    <div class="container">
-      <a class="navbar-brand fw-bold" href="{{ url_for('home') }}">
-        <i class="bi bi-search-heart"></i> Wikidata Validator
-      </a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
-        <ul class="navbar-nav">
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('home') }}">🏠 Home</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link active" aria-current="page" href="{{ url_for('about') }}">ℹ️ About</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link active" aria-current="page" href="{{ url_for('use') }}">📖 How to Use</a>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </nav>
-  
+{% block title %}About – Wikidata Reference Validator{% endblock %}
 
-<!-- About Content -->
-<div class="container app-container mt-5">
-  <div class="card glass-card p-4">
-    <h2 class="text-light mb-3">
-      <i class="bi bi-info-circle"></i> About This Tool
-    </h2>
+{% block content %}
+<article class="page">
+  <p class="page__eyebrow">About</p>
+  <h1 class="page__title">Keeping Wikidata verifiable</h1>
+  <p class="page__tagline">A small tool for a big job: making sure the sources behind Wikidata statements still exist.</p>
 
-    <p class="text-light">
-      The <strong>Wikidata Reference Validator</strong> helps you validate external references of Wikidata items
-      to check if their links are still accessible or now offline. 
-      This matters because we want to ensure that we have solid references for statements in Wikidata, 
-      so we can demonstrate how we know what we know.
+  <div class="prose">
+    <p>
+      The <strong>Wikidata Reference Validator</strong> checks the external references on a Wikidata item
+      to see whether their links can still be reached. Statements on Wikidata are only as trustworthy as the
+      sources behind them. When a source disappears, readers can no longer verify <em>how we know what we know</em>.
     </p>
 
-    <p class="text-light mb-2">✨ Features:</p>
-    <ul class="text-light">
-      <li>Search Wikidata items using autocomplete.</li>
-      <li>Check references and see if they are alive ✅ or dead ❌.</li>
-      <li>Quickly navigate to Wikidata to update dead references with up-to-date and accessible ones.</li>
+    <h2>What it does</h2>
+    <ul>
+      <li>Searches Wikidata items with autocomplete. You can also type a QID such as <code>Q42</code> directly.</li>
+      <li>Collects every reference URL on the item's statements and checks each unique URL once, concurrently.</li>
+      <li>Marks each reference as <strong>alive</strong> or <strong>unreachable</strong>, and looks up the latest
+        Wayback Machine snapshot for unreachable ones.</li>
+      <li>Groups results by statement and by type of source, so patterns stand out (for example, a news site that has gone offline).</li>
+      <li>Links straight to the statement on Wikidata so you can fix it.</li>
     </ul>
 
-    <p class="text-light">
-      Built with ❤️ using <strong>Wikidata API</strong>, <strong>Bootstrap</strong>, and a custom backend.
+    <h2>Source categories</h2>
+    <p>Each reference is put into a broad category based on its domain:</p>
+    <div class="category-grid" id="categoryGrid"></div>
+    <p>
+      The grouping is a simple heuristic based on known domains and top-level domains such as <code>.gov</code>
+      and <code>.edu</code>. It gives an overview; it doesn't judge how reliable a source is.
     </p>
 
+    <h2>Limitations</h2>
+    <ul>
+      <li>Some websites block automated requests or time out. A link marked unreachable is a prompt to review it, not proof that it is gone.</li>
+      <li>Pages that still return a successful response but no longer contain the cited content can't be detected.</li>
+      <li>Only URL references are checked. Identifiers such as VIAF or GND IDs are not.</li>
+    </ul>
 
-     
-    <hr class="border-light">
-
-    <!-- Credits -->
-    <p class="text-light mb-1"><strong>👨‍💻 Author:</strong> Josef Anthony</p>
-    <p class="text-light mb-0">
-      🌐 <a href="https://meta.wikimedia.org/wiki/User:JosefAnthony" target="_blank" class="link-light">Meta-Wiki Profile</a><br>
-      💻 <a href="" target="_blank" class="link-light">GitHub Repository</a><br>
+    <h2>Credits</h2>
+    <p>
+      Created by <a href="https://meta.wikimedia.org/wiki/User:JosefAnthony" target="_blank" rel="noopener">Josef Anthony</a>
+      and contributors.
+      Source code on <a href="https://github.com/JosefAnthony/Wikidata-Reference-Validator-Hackathon2026" target="_blank" rel="noopener">GitHub</a>;
+      tasks are tracked on <a href="https://phabricator.wikimedia.org/project/board/8311/" target="_blank" rel="noopener">Phabricator</a>.
     </p>
-
-    <hr class="border-light">
-
-   
-
   </div>
-</div>
+</article>
+{% endblock %}
 
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+{% block scripts %}
+<script>
+  document.getElementById("categoryGrid").innerHTML = Object.entries(SOURCE_CATEGORIES).map(([key, meta]) => `
+    <div><i class="bi ${meta.icon}" aria-hidden="true"></i><div><strong>${escapeHtml(meta.label)}</strong></div></div>
+  `).join("");
+</script>
+{% endblock %}

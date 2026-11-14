@@ -31,16 +31,22 @@ Coming soon — for now, run locally 👇
 
 ## ⚙️ How to Run Locally
 
-1. Install Python
+### Prerequisites
+
+**Install Python 3.10 or newer**
 Download from: https://www.python.org/downloads/
-During installation:
-✅ Tick “Add Python to PATH”
+During installation, tick ✅ **"Add Python to PATH"**.
 
-2. Verify Python
+**Verify Python is installed**
 
-Open Command Prompt and run:
-
+```bash
 python --version
+```
+
+> ⚠️ **No virtual environment is included in this repository.**
+> Virtual environments are machine-specific (they contain absolute paths and
+> platform-specific binaries), so they can't be shared or committed. Always
+> create a fresh one after cloning or forking.
 
 ### 1. Clone the repository
 
@@ -49,17 +55,23 @@ git clone https://github.com/JosefAnthony/Wikidata-Reference-Validator-Hackathon
 cd Wikidata-Reference-Validator-Hackathon2026
 ```
 
-### 2. Create virtual environment (optional but recommended)
+### 2. Create and activate a virtual environment
 
 ```bash
-python -m venv venv
+# Create it
+python -m venv .venv
 
-# Windows:
-venv\Scripts\activate
+# Activate — Windows (PowerShell)
+.venv\Scripts\Activate.ps1
 
-# Mac/Linux:
-source venv/bin/activate
+# Activate — Windows (Command Prompt)
+.venv\Scripts\activate.bat
+
+# Activate — macOS / Linux
+source .venv/bin/activate
 ```
+
+Your prompt should now start with `(.venv)`.
 
 ### 3. Install dependencies
 
@@ -89,10 +101,11 @@ https://phabricator.wikimedia.org/project/board/8311/
 
 1. Pick a task from Phabricator
 2. Assign the task to yourself
-3. Clone this repository
-4. Create a new branch
-5. Work on your task
-6. Submit a Pull Request on GitHub
+3. Fork this repository on GitHub
+4. Clone your fork and set up the app locally (see **How to Run Locally** above)
+5. Create a new branch
+6. Work on your task
+7. Submit a Pull Request on GitHub
 
 ---
 
