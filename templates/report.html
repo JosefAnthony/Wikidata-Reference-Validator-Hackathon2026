@@ -51,12 +51,15 @@
   <h2 class="mb-4 text-center">📊 Reference Validation Report</h2>
 
   <!-- Summary badges -->
-  <div class="d-flex justify-content-center gap-4 mb-4">
+  <div class="d-flex justify-content-center gap-3 mb-4 flex-wrap">
     <span class="badge bg-success p-3 fs-6">
       ✅ Alive: <span id="aliveCount">0</span>
     </span>
     <span class="badge bg-danger p-3 fs-6">
       ❌ Dead: <span id="deadCount">0</span>
+    </span>
+    <span class="badge bg-info text-dark p-3 fs-6">
+      🔁 Archived Available: <span id="archiveCount">0</span>
     </span>
   </div>
 
@@ -110,6 +113,13 @@
     // Fill badges
     document.getElementById("aliveCount").textContent = report.aliveCount;
     document.getElementById("deadCount").textContent = report.deadCount;
+    const archivedCount = report.archivedCount !== undefined
+      ? report.archivedCount
+      : (report.references || []).filter(r => r.status === "dead" && r.suggestedArchive).length;
+    const archiveCountEl = document.getElementById("archiveCount");
+    if (archiveCountEl) {
+      archiveCountEl.textContent = archivedCount;
+    }
 
     // Pie Chart
     new Chart(document.getElementById("refChart"), {
@@ -170,12 +180,69 @@
           <div class="accordion-body">
             <p><strong>Property:</strong> ${ref.propertyLabel}</p>
             ${ref.statementValue ? `<p><strong>Value:</strong> ${ref.statementValue}</p>` : ""}
-            <p><a href="${ref.url}" target="_blank" title="${ref.url}">${ref.url}</a></p>
+            <p><strong>URL:</strong> <a href="${ref.url}" target="_blank" title="${ref.url}">${ref.url}</a></p>
             ${
               ref.status === "dead"
-              ? `<div class="alert alert-warning p-2 mt-2">
-                   ⚠️ Suggestion: Please review or update this reference.
-                 </div>`
+              ? `
+                <div class="alert alert-warning p-2 mt-2 mb-2">
+                  ⚠️ <strong>Reference unavailable.</strong> Please review or update this reference on Wikidata.
+                </div>
+                ${
+                  ref.suggestedArchive
+                  ? `
+                    <div class="p-3 border border-info rounded bg-white mt-2">
+                      <div class="fw-bold text-primary mb-1">
+                        🔁 Suggested Archive (Internet Archive):
+                      </div>
+                      <div class="text-break mb-1">
+                        <a href="${ref.suggestedArchive.archiveUrl}" target="_blank" class="fw-semibold link-primary">
+                          ${ref.suggestedArchive.archiveUrl}
+                        </a>
+                      </div>
+                      ${
+                        ref.suggestedArchive.archiveDateLabel || ref.suggestedArchive.archiveDate
+                        ? `<div class="text-muted small mt-1">
+                             📅 Snapshot Date: <strong>${ref.suggestedArchive.archiveDateLabel || ref.suggestedArchive.archiveDate}</strong>
+                             ${ref.suggestedArchive.archiveDate ? ` &bull; Wikidata P2960: <code>${ref.suggestedArchive.archiveDate}</code>` : ""}
+                           </div>`
+                        : ""
+                      }
+                      <div class="mt-2 d-flex gap-2 flex-wrap">
+                        <button class="btn btn-sm btn-outline-primary"
+                                onclick="copyReportArchive('${encodeURIComponent(ref.suggestedArchive.archiveUrl)}', this, 'URL')">
+                          📋 Copy Archive URL
+                        </button>
+                        ${
+                          ref.suggestedArchive.archiveDate
+                          ? `
+                          <button class="btn btn-sm btn-outline-secondary"
+                                  onclick="copyReportArchive('${encodeURIComponent(ref.suggestedArchive.archiveDate)}', this, 'Date')">
+                            📅 Copy Date
+                          </button>
+                          `
+                          : ""
+                        }
+                        <a href="${ref.suggestedArchive.archiveUrl}" target="_blank" class="btn btn-sm btn-primary">
+                          Open Snapshot
+                        </a>
+                      </div>
+                    </div>
+                  `
+                  : `
+                    <div class="p-2 border rounded bg-light text-muted small mt-2">
+                      📭 No direct archive snapshot found on Wayback Machine.
+                      <div class="mt-2 d-flex gap-2 flex-wrap">
+                        <a href="https://web.archive.org/web/*/${encodeURIComponent(ref.url)}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                          Search Wayback History
+                        </a>
+                        <a href="https://web.archive.org/save/${encodeURIComponent(ref.url)}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                          Save to Wayback
+                        </a>
+                      </div>
+                    </div>
+                  `
+                }
+              `
               : ""
             }
           </div>
@@ -195,10 +262,63 @@
     `;
   }
 
-  // Handle Download CSV
+  // Clipboard helper for Report page
+  function copyReportArchive(encodedText, btn, type = "URL") {
+    const text = decodeURIComponent(encodedText);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        const originalText = btn.innerHTML;
+        btn.innerHTML = `✓ ${type} Copied!`;
+        btn.classList.add("btn-success");
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.classList.remove("btn-success");
+        }, 2000);
+      }).catch(() => {
+        prompt(`Copy ${type}:`, text);
+      });
+    } else {
+      prompt(`Copy ${type}:`, text);
+    }
+  }
+
+  // Handle Download CSV with Archive columns
   const downloadBtn = document.getElementById("downloadBtn");
   if (downloadBtn) {
     downloadBtn.onclick = () => {
+      const results = localStorage.getItem("reportData");
+      if (!results) {
+        alert("No report data available to download.");
+        return;
+      }
+
+      const report = JSON.parse(results);
+
+      // Convert to CSV
+      const headers = ["URL", "Status", "Property", "Statement Value", "Archive URL", "Archive Date"];
+      const rows = (report.references || []).map(r => [
+        `"${(r.url || "").replace(/"/g, '""')}"`,
+        r.status,
+        `"${(r.propertyLabel || "").replace(/"/g, '""')}"`,
+        `"${(r.statementValue || "").replace(/"/g, '""')}"`,
+        `"${(r.suggestedArchive && r.suggestedArchive.archiveUrl ? r.suggestedArchive.archiveUrl : "").replace(/"/g, '""')}"`,
+        `"${(r.suggestedArchive && r.suggestedArchive.archiveDate ? r.suggestedArchive.archiveDate : "").replace(/"/g, '""')}"`
+      ]);
+
+      const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\r\n");
+
+      // Trigger download
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `validation-report-${report.qid || "wikidata"}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      URL.revokeObjectURL(url);
     };
   }
 </script>
