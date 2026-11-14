@@ -1,0 +1,23 @@
+<nav class="navbar navbar-expand-lg glass-navbar shadow-sm fixed-top">
+  <div class="container">
+    <a class="navbar-brand fw-bold" href="{{ url_for('home') }}">
+      <i class="bi bi-search-heart"></i> {{ msg('wrv-nav-brand') }}
+    </a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+      <ul class="navbar-nav">
+        <li class="nav-item">
+          <a class="nav-link {% if request.endpoint == 'home' %}active{% endif %}" href="{{ url_for('home') }}">🏠 {{ msg('wrv-nav-home') }}</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.endpoint == 'about' %}active{% endif %}" href="{{ url_for('about') }}">ℹ️ {{ msg('wrv-nav-about') }}</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.endpoint == 'use' %}active{% endif %}" href="{{ url_for('use') }}">📖 {{ msg('wrv-nav-howto') }}</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
