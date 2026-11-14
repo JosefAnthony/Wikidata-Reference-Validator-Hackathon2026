@@ -64,6 +64,40 @@ def search():
     return jsonify(results)
 
 
+@app.route("/archive", methods=["GET", "POST"])
+def archive_lookup():
+    """
+    Fetch the latest archived snapshot from the Internet Archive API (Wayback Machine)
+    for a given URL.
+    Supports:
+      - GET /archive?url=<url>
+      - POST /archive with JSON {"url": "<url>"}
+    """
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        url = data.get("url")
+    else:
+        url = request.args.get("url")
+
+    if not url:
+        return jsonify({"error": "Missing URL parameter"}), 400
+
+    snapshot = fetch_wayback_snapshot(url.strip())
+    if snapshot:
+        return jsonify({
+            "success": True,
+            "url": url,
+            "archive": snapshot
+        }), 200
+
+    return jsonify({
+        "success": False,
+        "url": url,
+        "archive": None,
+        "message": "No archived snapshot found on Wayback Machine"
+    }), 404
+
+
 # ---------------------------------------------------
 # URL STATUS CHECK
 # ---------------------------------------------------
@@ -86,26 +120,82 @@ async def check_url(session, url):
 
 
 # ---------------------------------------------------
-# WAYBACK MACHINE HELPER  ✅ FIXED
+# WAYBACK MACHINE HELPERS (Internet Archive API)
 # ---------------------------------------------------
 
-def fetch_wayback_snapshot(url):
+def parse_wayback_timestamp(ts):
     """
-    Fetch latest available Wayback Machine snapshot for a URL.
-    Returns None if no archive exists.
+    Parses a 14-digit Wayback timestamp (YYYYMMDDhhmmss) into an ISO date (YYYY-MM-DD)
+    and a human-friendly format (e.g. Aug 15, 2020) suitable for Wikidata P2960.
+    """
+    if not ts:
+        return None, None
+    ts_str = str(ts).strip()
+    if len(ts_str) < 8:
+        return None, None
+    try:
+        from datetime import datetime
+        year = ts_str[0:4]
+        month = ts_str[4:6]
+        day = ts_str[6:8]
+        iso_date = f"{year}-{month}-{day}"
+        dt = datetime.strptime(iso_date, "%Y-%m-%d")
+        friendly_label = dt.strftime("%b %d, %Y")
+        return iso_date, friendly_label
+    except Exception:
+        return None, None
+
+
+async def fetch_wayback_snapshot_async(session, url):
+    """
+    Asynchronously fetch latest available Wayback Machine snapshot for a URL
+    using the Internet Archive Availability API.
+    Returns snapshot dict or None if no archive exists.
     """
     try:
         params = {"url": url}
-        r = requests.get(WAYBACK_API, params=params, timeout=10)
+        timeout = aiohttp.ClientTimeout(total=8)
+        async with session.get(WAYBACK_API, params=params, timeout=timeout) as resp:
+            if resp.status == 200:
+                data = await resp.json(content_type=None)
+                snapshot = data.get("archived_snapshots", {}).get("closest")
+                if snapshot and snapshot.get("available"):
+                    timestamp = snapshot.get("timestamp")
+                    archive_date, archive_date_label = parse_wayback_timestamp(timestamp)
+                    return {
+                        "archiveUrl": snapshot.get("url"),
+                        "timestamp": timestamp,
+                        "archiveDate": archive_date,
+                        "archiveDateLabel": archive_date_label,
+                        "status": snapshot.get("status")
+                    }
+    except Exception as e:
+        print(f"[Wayback async] Failed for {url}: {e}")
+
+    return None
+
+
+def fetch_wayback_snapshot(url):
+    """
+    Fetch latest available Wayback Machine snapshot for a URL synchronously.
+    Returns snapshot dict or None if no archive exists.
+    """
+    try:
+        params = {"url": url}
+        r = requests.get(WAYBACK_API, params=params, headers=HEADERS, timeout=10)
         r.raise_for_status()
 
         data = r.json()
         snapshot = data.get("archived_snapshots", {}).get("closest")
 
         if snapshot and snapshot.get("available"):
+            timestamp = snapshot.get("timestamp")
+            archive_date, archive_date_label = parse_wayback_timestamp(timestamp)
             return {
                 "archiveUrl": snapshot.get("url"),
-                "timestamp": snapshot.get("timestamp"),
+                "timestamp": timestamp,
+                "archiveDate": archive_date,
+                "archiveDateLabel": archive_date_label,
                 "status": snapshot.get("status")
             }
 
@@ -213,16 +303,29 @@ def validate_references():
         if not refs_data:
             return jsonify({"message": "No references found"}), 200
 
-        async def run_checks():
+        async def run_checks_and_archives():
             async with aiohttp.ClientSession(headers=HEADERS) as session:
-                tasks = [check_url(session, ref["url"]) for ref in refs_data]
-                return await asyncio.gather(*tasks)
+                # Step 1: Check alive/dead status for all reference URLs concurrently
+                status_tasks = [check_url(session, ref["url"]) for ref in refs_data]
+                statuses = await asyncio.gather(*status_tasks)
 
-        url_statuses = asyncio.run(run_checks())
+                # Step 2: Concurrently query Internet Archive API for any dead references
+                async def no_op():
+                    return None
+
+                archive_tasks = [
+                    fetch_wayback_snapshot_async(session, ref["url"])
+                    if status.get("status") == "dead" else no_op()
+                    for ref, status in zip(refs_data, statuses)
+                ]
+                archives = await asyncio.gather(*archive_tasks)
+                return statuses, archives
+
+        url_statuses, archive_results = asyncio.run(run_checks_and_archives())
         labels = fetch_labels(all_ids_to_label)
 
         results = []
-        for ref_data, status_data in zip(refs_data, url_statuses):
+        for ref_data, status_data, archive in zip(refs_data, url_statuses, archive_results):
             result = {
                 "url": ref_data["url"],
                 "status": status_data["status"],
@@ -233,11 +336,9 @@ def validate_references():
                 ) if ref_data["statementValue"] else ""
             }
 
-            # 🔁 Wayback suggestion ONLY for dead refs
-            if status_data["status"] == "dead":
-                archive = fetch_wayback_snapshot(ref_data["url"])
-                if archive:
-                    result["suggestedArchive"] = archive
+            # 🔁 Wayback suggestion for dead refs
+            if status_data["status"] == "dead" and archive:
+                result["suggestedArchive"] = archive
 
             results.append(result)
 
