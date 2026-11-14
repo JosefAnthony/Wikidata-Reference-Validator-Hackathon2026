@@ -337,22 +337,6 @@ body:not(.page-home) .site-header { border-bottom-color: var(--border); }
   line-height: 1.05;
   letter-spacing: -0.045em;
 }
-.hero__version {
-  display: inline-block;
-  position: relative;
-  top: -1.6em;
-  margin-left: 8px;
-  vertical-align: baseline;
-  padding: 1px 7px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-pill);
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 400;
-  letter-spacing: 0;
-  line-height: 1.5;
-}
 
 .hero__lead {
   max-width: 500px;
