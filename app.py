@@ -3,7 +3,10 @@ import requests
 import aiohttp
 import asyncio
 
+import i18n 
+
 app = Flask(__name__)
+i18n.init_app(app) 
 
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
 WAYBACK_API = "https://archive.org/wayback/available"
