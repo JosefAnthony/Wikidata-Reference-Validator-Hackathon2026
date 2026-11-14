@@ -453,6 +453,8 @@ body:not(.page-home) .site-header { border-bottom-color: var(--border); }
   cursor: pointer;
 }
 .suggestion:hover, .suggestion.is-active { background: var(--surface-hover); }
+.suggestion--loading { cursor: default; color: var(--text-muted); }
+.suggestion--loading:hover { background: transparent; }
 .suggestion__text { display: flex; flex-direction: column; min-width: 0; }
 .suggestion__label { font-weight: 500; }
 .suggestion__desc {

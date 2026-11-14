@@ -23,14 +23,6 @@ const QID_PATTERN = /^[Qq]\d+$/;
 /**************************************
  * AUTOCOMPLETE
  **************************************/
-function debounce(fn, wait) {
-  let timer;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), wait);
-  };
-}
-
 function closeSuggestions() {
   state.suggestions = [];
   state.activeIndex = -1;
@@ -67,7 +59,21 @@ function renderSuggestions() {
   }
 }
 
-const fetchSuggestions = debounce(async query => {
+function showSuggestionsLoading() {
+  state.suggestions = [];
+  state.activeIndex = -1;
+  els.suggestions.innerHTML = `
+    <li class="suggestion suggestion--loading" role="option" aria-disabled="true">
+      <span class="suggestion__text">
+        <span class="suggestion__label">Searching Wikidata…</span>
+      </span>
+    </li>`;
+  els.suggestions.hidden = false;
+  els.input.setAttribute("aria-expanded", "true");
+  els.input.removeAttribute("aria-activedescendant");
+}
+
+const fetchSuggestions = async query => {
   const requestId = ++state.searchRequestId;
   try {
     const response = await fetch(`/search?q=${encodeURIComponent(query)}`);
@@ -80,7 +86,7 @@ const fetchSuggestions = debounce(async query => {
   } catch {
     if (requestId === state.searchRequestId) closeSuggestions();
   }
-}, 220);
+};
 
 function selectSuggestion(index) {
   const item = state.suggestions[index];
@@ -96,11 +102,12 @@ els.input.addEventListener("input", () => {
   state.selected = null;
   els.clear.hidden = !els.input.value;
 
-  if (query.length < 2) {
+  if (!query) {
     state.searchRequestId++;
     closeSuggestions();
     return;
   }
+  showSuggestionsLoading();
   fetchSuggestions(query);
 });
 
@@ -129,10 +136,6 @@ els.suggestions.addEventListener("mousedown", e => {
   if (!li) return;
   e.preventDefault();
   selectSuggestion(Number(li.dataset.index));
-});
-
-document.addEventListener("click", e => {
-  if (!els.form.contains(e.target)) closeSuggestions();
 });
 
 els.clear.addEventListener("click", () => {
