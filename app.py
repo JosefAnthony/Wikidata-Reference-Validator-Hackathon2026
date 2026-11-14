@@ -259,6 +259,11 @@ def validate_references():
                 ) if ref_data["statementValue"] else ""
             }
 
+            if "statusCode" in status_data:
+                result["statusCode"] = status_data["statusCode"]
+            if "error" in status_data:
+                result["error"] = status_data["error"]
+
             # 🔁 Wayback suggestion ONLY for dead refs
             if status_data["status"] == "dead":
                 archive = fetch_wayback_snapshot(ref_data["url"])
