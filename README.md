@@ -42,7 +42,7 @@ Open Command Prompt and run:
 
 python --version
 
-### 1. Clone the repository
+### 1. Clone the fork repository
 
 ```bash
 git clone https://github.com/JosefAnthony/Wikidata-Reference-Validator-Hackathon2026.git
