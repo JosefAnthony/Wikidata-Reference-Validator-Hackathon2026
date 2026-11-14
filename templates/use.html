@@ -101,9 +101,11 @@
           with a corrected or more reliable source.
         </li>
         <li class="mb-2">
-          When available, the tool may also suggest an
-          <strong>archived version</strong> of the reference, such as a Wayback Machine snapshot,
-          which can be used to replace or supplement the dead link.
+          When a reference is detected as dead, the validator automatically queries the
+          <strong>Internet Archive API</strong> (Wayback Machine) to fetch the closest available snapshot.
+          It provides a <strong>suggested archive URL</strong> and the corresponding <strong>snapshot date</strong>,
+          with convenient one-click copy buttons ready for Wikidata statements (Property <code>P1065</code> for Archive URL
+          and <code>P2960</code> for Archive Date).
         </li>
       </ol>
 
@@ -121,7 +123,7 @@
 
       <div class="text-center my-4">
         <img
-          src="{{ url_for('static', filename='dead-reference-example--.jpg') }}"
+          src="{{ url_for('static', filename='dead-reference-example.jpg') }}"
           class="img-fluid shadow guide-image"
           alt="Example of a dead reference result in the Wikidata Reference Validator"
         >

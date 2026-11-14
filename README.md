@@ -10,7 +10,9 @@ This tool checks the external reference URLs on a Wikidata item (QID) to determi
 * 🔗 Extracts all reference URLs from the item's statements
 * ⚡ Checks if the referenced URLs are reachable (alive or dead)
 * ❌ Flags dead links and shows which statement they belong to
-* ✏️ Provides a one-click "Edit" button to fix or update the reference
+* 🏛️ **Internet Archive Integration**: Automatically queries the Internet Archive (Wayback Machine Availability API) for dead links, fetching the closest preserved snapshot, archive URL (`P1065`), and snapshot date (`P2960`) with 1-click copy buttons.
+* ✏️ Provides a one-click "Edit" button to fix or update the reference on Wikidata
+* 📊 Comprehensive validation reports with charts and CSV export (including archive URLs and dates)
 
 ---
 
@@ -24,7 +26,9 @@ Coming soon — for now, run locally 👇
 
 * Python 3.10+
 * Flask (Backend)
-* Aiohttp + Asyncio (for fast URL checking)
+* Aiohttp + Asyncio (for fast asynchronous URL and archive checking)
+* Internet Archive Wayback Availability API
+* Bootstrap 5 & Chart.js (Frontend)
 
 
 ---
