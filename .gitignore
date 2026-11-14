@@ -16,3 +16,6 @@ venv/
 # OAuth diagnostic log
 oauth_debug.log
 
+# Local SQLite history database
+instance/
+

@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   {% block head %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}"{% if user %} data-authenticated="true"{% endif %}>
   <a class="skip-link" href="#main">Skip to content</a>
 
   <header class="site-header">
@@ -46,6 +46,9 @@
         {% endfor %}
 
         {% if user %}
+          <a class="site-nav__link {% if request.endpoint == 'history' %}is-active{% endif %}"
+             href="{{ url_for('history') }}"
+             {% if request.endpoint == 'history' %}aria-current="page"{% endif %}>History</a>
           <span class="site-nav__user" title="Signed in to Wikimedia as {{ user.name }}">
             <i class="bi bi-person-circle" aria-hidden="true"></i>
             <span class="site-nav__user-name">{{ user.name }}</span>

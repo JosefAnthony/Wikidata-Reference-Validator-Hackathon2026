@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Your history – Wikidata Reference Validator{% endblock %}
+{% block body_class %}page-history{% endblock %}
+
+{% block content %}
+<section class="page page--wide history">
+  <p class="page__eyebrow">Your activity</p>
+  <h1 class="page__title">History</h1>
+  <p class="page__tagline">
+    Searches and edit activity recorded for <strong>{{ user.name }}</strong>.
+    This history is stored by the validator and is only visible while you are signed in.
+  </p>
+
+  <section class="history__section" id="searches" aria-labelledby="searchesTitle">
+    <header class="history__head">
+      <div>
+        <h2 id="searchesTitle">Search history</h2>
+        <p>Items you validated with the tool.</p>
+      </div>
+      {% if searches %}
+      <form method="post" action="{{ url_for('clear_history') }}"
+            onsubmit="return confirm('Clear your search history?');">
+        <input type="hidden" name="kind" value="searches">
+        <button type="submit" class="link-btn">Clear</button>
+      </form>
+      {% endif %}
+    </header>
+
+    {% if searches %}
+    <ol class="history__list">
+      {% for s in searches %}
+      <li class="history-row">
+        <div class="history-row__main">
+          <div class="history-row__heading">
+            <a class="history-row__title" href="{{ url_for('home', item=s.qid) }}">{{ s.label }}</a>
+            <span class="qid-pill">{{ s.qid }}</span>
+          </div>
+          {% if s.description %}
+          <p class="history-row__desc">{{ s.description }}</p>
+          {% endif %}
+        </div>
+
+        <div class="history-row__stats">
+          {% if s.total %}
+          <span class="history-stat history-stat--alive">{{ s.alive }} alive</span>
+          <span class="history-stat history-stat--dead">{{ s.dead }} unreachable</span>
+          <span class="history-stat history-stat--archive">{{ s.archived }} archived</span>
+          {% else %}
+          <span class="history-stat">No references</span>
+          {% endif %}
+        </div>
+
+        <time class="history-row__time" datetime="{{ s.created_at }}">{{ s.created_at|history_time }}</time>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <div class="history__empty">
+      <i class="bi bi-search" aria-hidden="true"></i>
+      <p>No searches yet. Validate an item and it will appear here.</p>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="history__section" id="edits" aria-labelledby="editsTitle">
+    <header class="history__head">
+      <div>
+        <h2 id="editsTitle">Edit history</h2>
+        <p>Edit links you opened, with the reference URL before and after your change.</p>
+      </div>
+      {% if edits %}
+      <form method="post" action="{{ url_for('clear_history') }}"
+            onsubmit="return confirm('Clear your edit history?');">
+        <input type="hidden" name="kind" value="edits">
+        <button type="submit" class="link-btn">Clear</button>
+      </form>
+      {% endif %}
+    </header>
+
+    {% if edits %}
+    <ol class="history__list">
+      {% for e in edits %}
+      <li class="history-row">
+        <div class="history-row__main">
+          <div class="history-row__heading">
+            <a class="history-row__title" href="{{ url_for('home', item=e.qid) }}">{{ e.label }}</a>
+            <span class="qid-pill">{{ e.qid }}</span>
+            <span class="history-status history-status--{{ e.status }}">
+              {{ "Change detected" if e.status == "completed" else "Awaiting validation" }}
+            </span>
+          </div>
+
+          <p class="history-row__desc">
+            {% if e.property_label or e.property_id %}
+              <span>{{ e.property_label or e.property_id }}</span>
+              {% if e.property_id %}<span class="mono">({{ e.property_id }})</span>{% endif %}
+            {% else %}
+              Item edit page
+            {% endif %}
+            {% if e.statement_value %}
+              <span aria-hidden="true"> · </span>{{ e.statement_value }}
+            {% endif %}
+          </p>
+
+          {% if e.original_url or e.new_url %}
+          <div class="history-change">
+            {% if e.original_url %}
+            <div class="history-change__row">
+              <span class="history-change__label">Before</span>
+              <a href="{{ e.original_url }}" target="_blank" rel="noopener noreferrer">{{ e.original_url }}</a>
+            </div>
+            {% endif %}
+            {% if e.new_url %}
+            <div class="history-change__row">
+              <span class="history-change__label">After</span>
+              <a href="{{ e.new_url }}" target="_blank" rel="noopener noreferrer">{{ e.new_url }}</a>
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          {% if e.removed or e.added %}
+          <details class="history-diff">
+            <summary>Detected reference changes</summary>
+            {% if e.removed %}
+            <p class="history-diff__label">Removed</p>
+            <ul>
+              {% for ref in e.removed %}
+              <li><a href="{{ ref.url }}" target="_blank" rel="noopener noreferrer">{{ ref.url }}</a></li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+            {% if e.added %}
+            <p class="history-diff__label">Added</p>
+            <ul>
+              {% for ref in e.added %}
+              <li><a href="{{ ref.url }}" target="_blank" rel="noopener noreferrer">{{ ref.url }}</a></li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+          </details>
+          {% endif %}
+
+          {% if e.status != "completed" %}
+          <p class="history-row__hint">
+            Validate this item again after saving your change on Wikidata to capture the new link.
+          </p>
+          {% endif %}
+        </div>
+
+        <time class="history-row__time" datetime="{{ e.created_at }}">{{ e.created_at|history_time }}</time>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <div class="history__empty">
+      <i class="bi bi-pencil-square" aria-hidden="true"></i>
+      <p>No edit activity yet. Use an Edit link on a result and it will appear here.</p>
+    </div>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}

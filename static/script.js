@@ -408,7 +408,8 @@ function renderReport() {
             </p>
           </div>
           <div class="article__actions">
-            <a class="btn-ghost" href="${wikidataUrl(qid)}" target="_blank" rel="noopener" title="Edit on Wikidata">
+            <a class="btn-ghost" href="${wikidataUrl(qid)}" target="_blank" rel="noopener"
+               data-edit-track="item" title="Edit on Wikidata">
               <i class="bi bi-pencil-square"></i><span>Edit</span>
             </a>
             <a class="btn-ghost" href="/report" target="_blank" rel="noopener" title="Open full report">
@@ -531,6 +532,11 @@ function renderReference(ref) {
 
       <div class="ref__actions">
         <a class="icon-btn" href="${wikidataUrl(qid, ref.propertyId)}" target="_blank" rel="noopener"
+           data-edit-track="reference"
+           data-edit-url="${escapeHtml(ref.url)}"
+           data-edit-property="${escapeHtml(ref.propertyId || "")}"
+           data-edit-property-label="${escapeHtml(ref.propertyLabel || "")}"
+           data-edit-value="${escapeHtml(ref.statementValue || "")}"
            title="Edit this statement on Wikidata" aria-label="Edit this statement on Wikidata">
           <i class="bi bi-pencil"></i>
         </a>
@@ -626,7 +632,39 @@ document.addEventListener("keydown", e => {
 /**************************************
  * DELEGATED ACTIONS (results area)
  **************************************/
+function trackEditClick(link) {
+  if (!state.report || !document.body.hasAttribute("data-authenticated")) return;
+
+  const references = Array.isArray(state.report.references)
+    ? state.report.references.slice(0, 300).map(ref => ({
+        url: ref.url,
+        propertyId: ref.propertyId || "",
+      }))
+    : [];
+
+  const payload = {
+    qid: state.report.qid,
+    label: state.report.label,
+    propertyId: link.dataset.editProperty || "",
+    propertyLabel: link.dataset.editPropertyLabel || "",
+    statementValue: link.dataset.editValue || "",
+    url: link.dataset.editUrl || "",
+    references,
+  };
+
+  // The Edit link opens in a new tab, so the request can finish normally.
+  fetch("/api/history/edit-click", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 els.result.addEventListener("click", e => {
+  const editLink = e.target.closest("[data-edit-track]");
+  if (editLink) trackEditClick(editLink);
+
   const target = e.target.closest("button, a");
   if (!target) return;
 

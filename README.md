@@ -12,6 +12,7 @@ This tool checks the external reference URLs on a Wikidata item (QID) to determi
 * ❌ Flags dead links and shows which statement they belong to
 * ✏️ Provides a one-click "Edit" button to fix or update the reference
 * 🔐 Optional Wikimedia login (OAuth 1.0a) for identifying users
+* 📚 Per-user search and edit history when logged in
 
 ---
 
@@ -126,6 +127,25 @@ python app.py
 
 Open your browser and go to:
 👉 http://127.0.0.1:5000
+
+---
+
+## 📚 User History
+
+When you are signed in with Wikimedia, a **History** link appears in the
+navigation bar. It shows:
+
+* **Search history** — every item you validate, with alive, unreachable, and
+  archived reference counts.
+* **Edit history** — every Edit link you open, including the reference URL
+  before the edit. After you save the change on Wikidata and validate the item
+  again, the validator compares the new references with the saved snapshot and
+  shows the new URL (plus any added or removed references).
+
+History is stored locally in `instance/history.db` (SQLite), keyed to your
+Wikimedia user ID. OAuth tokens and other credentials are never stored there.
+Each section can be cleared from the history page. The database is created
+automatically and is ignored by git.
 
 ---
 
