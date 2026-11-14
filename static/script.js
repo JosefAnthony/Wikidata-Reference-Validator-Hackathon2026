@@ -1,42 +1,87 @@
 /**************************************
- * AUTOCOMPLETE SEARCH (UNCHANGED FLOW)
+ * AUTOCOMPLETE SEARCH (DEBOUNCED)
  **************************************/
-document.getElementById("search").addEventListener("input", async function () {
-  const query = this.value;
+const DEBOUNCE_DELAY = 900;
+let debounceTimer = null;
+let currentAbortController = null;
+let latestRequestId = 0;
+
+/**
+ * Cancels any queued debounce timer or in-flight search request
+ * and advances the request sequence id to invalidate stale responses.
+ */
+function cancelPendingSearch() {
+  if (debounceTimer !== null) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  if (currentAbortController) {
+    currentAbortController.abort();
+    currentAbortController = null;
+  }
+  latestRequestId += 1;
+}
+
+document.getElementById("search").addEventListener("input", function () {
+  const query = this.value.trim();
   const suggestions = document.getElementById("suggestions");
+  cancelPendingSearch();
   suggestions.innerHTML = "";
 
   if (query.length < 3) return;
 
-  const response = await fetch(
-    `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(
-      query
-    )}&language=en&format=json&origin=*`
-  );
-  const data = await response.json();
+  const requestId = latestRequestId;
 
-  data.search.forEach(item => {
-    const li = document.createElement("li");
-    li.className = "list-group-item list-group-item-action";
+  debounceTimer = setTimeout(async () => {
+    debounceTimer = null;
+    const controller = new AbortController();
+    currentAbortController = controller;
 
-    // label + description (Wikidata-style)
-    li.innerHTML = `
+    try {
+      const response = await fetch(
+        `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(
+          query
+        )}&language=en&format=json&origin=*`,
+        { signal: controller.signal }
+      );
+      const data = await response.json();
+
+      if (requestId !== latestRequestId || controller.signal.aborted) return;
+
+      suggestions.innerHTML = "";
+
+      (data.search || []).forEach(item => {
+        const li = document.createElement("li");
+        li.className = "list-group-item list-group-item-action";
+
+        // label + description (Wikidata-style)
+        li.innerHTML = `
       <div>
         <strong>${item.label}</strong>
         <div class="small text-muted">${item.description || ""}</div>
       </div>
     `;
 
-    li.onclick = () => {
-      const input = document.getElementById("search");
-      input.value = item.label;
-      input.setAttribute("data-qid", item.id);
-      input.setAttribute("data-label", item.label);
-      suggestions.innerHTML = "";
-    };
+        li.onclick = () => {
+          cancelPendingSearch();
+          const input = document.getElementById("search");
+          input.value = item.label;
+          input.setAttribute("data-qid", item.id);
+          input.setAttribute("data-label", item.label);
+          suggestions.innerHTML = "";
+        };
 
-    suggestions.appendChild(li);
-  });
+        suggestions.appendChild(li);
+      });
+    } catch (err) {
+      if (err && err.name === "AbortError") return;
+      console.error("Autocomplete search failed:", err);
+    } finally {
+      if (currentAbortController === controller) {
+        currentAbortController = null;
+      }
+    }
+  }, DEBOUNCE_DELAY);
 });
 
 /**************************************
@@ -215,21 +260,19 @@ async function validate() {
                 ${ref.statementValue ? `: <em>${ref.statementValue}</em>` : ""}
               </div>
 
-              ${
-                ref.status === "dead"
-                  ? `
+              ${ref.status === "dead"
+          ? `
                     <div class="mt-2 alert alert-warning p-2 mb-1">
                       <i class="bi bi-exclamation-triangle me-1"></i>
                       <strong>Reference unavailable.</strong>
                       Please review or update this reference.
                     </div>
                   `
-                  : ""
-              }
+          : ""
+        }
 
-              ${
-                ref.status === "dead" && ref.suggestedArchive
-                  ? `
+              ${ref.status === "dead" && ref.suggestedArchive
+          ? `
                     <div class="mt-2 small">
                       🔁 <strong>Suggested archived version:</strong>
                       <a href="${ref.suggestedArchive.archiveUrl}"
@@ -239,18 +282,17 @@ async function validate() {
                       </a>
                     </div>
                   `
-                  : ""
-              }
+          : ""
+        }
 
-              ${
-                ref.status === "dead" && !ref.suggestedArchive
-                  ? `
+              ${ref.status === "dead" && !ref.suggestedArchive
+          ? `
                     <div class="mt-2 small text-muted">
                       📭 No archived snapshot found on Wayback Machine.
                     </div>
                   `
-                  : ""
-              }
+          : ""
+        }
             </div>
           </div>
         </li>
@@ -304,13 +346,15 @@ document.addEventListener("hidden.bs.collapse", e => {
 });
 
 /**************************************
- * RESET SEARCH (UNCHANGED)
+ * RESET SEARCH
  **************************************/
 function resetSearch() {
+  cancelPendingSearch();
   const searchSection = document.getElementById("searchSection");
   document.getElementById("search").value = "";
   document.getElementById("search").removeAttribute("data-qid");
   document.getElementById("search").removeAttribute("data-label");
+  document.getElementById("suggestions").innerHTML = "";
   document.getElementById("result").innerHTML = "";
   searchSection.style.display = "block";
 }
