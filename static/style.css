@@ -857,38 +857,6 @@ body:not(.page-home) .site-header { border-bottom-color: var(--border); }
 }
 .count--dead { background: var(--dead-soft); color: var(--dead); }
 
-.category-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip--filter { padding: 4px 11px; font-size: 0.8rem; }
-.chip--filter[aria-checked="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
-.chip--filter[aria-checked="true"] .count { background: color-mix(in srgb, var(--accent-contrast) 18%, transparent); color: inherit; }
-
-.filter-text {
-  display: flex;
-  flex: 1;
-  min-width: 200px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-faint);
-  transition: border-color 0.15s;
-}
-.filter-text:focus-within { border-color: var(--primary); }
-.filter-text input {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 0.85rem;
-}
-.filter-text input::placeholder { color: var(--text-faint); }
-
 /* Statement sections */
 .statement { margin-top: 40px; }
 .statement__title {
@@ -1377,14 +1345,14 @@ body:not(.page-home) .site-header { border-bottom-color: var(--border); }
   .summary__cell:nth-child(n+3) { border-top: 1px solid var(--border); }
   .article__actions .btn-ghost span { display: none; }
   .filters { position: static; }
-  .segmented, .category-chips {
+  .segmented {
     flex-wrap: nowrap;
     max-width: 100%;
     overflow-x: auto;
     scrollbar-width: none;
   }
-  .segmented::-webkit-scrollbar, .category-chips::-webkit-scrollbar { display: none; }
-  .segmented__btn, .chip--filter { flex-shrink: 0; white-space: nowrap; }
+  .segmented::-webkit-scrollbar { display: none; }
+  .segmented__btn { flex-shrink: 0; white-space: nowrap; }
   .ref { grid-template-columns: auto minmax(0, 1fr); }
   .ref__actions { grid-column: 2; opacity: 1; }
   .statement__count { margin-left: 0; width: 100%; }
