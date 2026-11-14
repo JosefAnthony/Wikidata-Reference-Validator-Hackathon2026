@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, render_template
 import requests
 import aiohttp
 import asyncio
+from urllib.parse import urlencode, parse_qs
 
 app = Flask(__name__)
 
@@ -13,6 +14,25 @@ HEADERS = {
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
                   "Chrome/115.0.0.0 Safari/537.36"
 }
+
+
+def build_search_url(qid=None, label=None, base_path="/"):
+    """Build a shareable URL containing the current search state."""
+    params = {}
+    if qid:
+        params["qid"] = qid
+    if label:
+        params["label"] = label
+    return f"{base_path}?{urlencode(params)}" if params else base_path
+
+
+def get_search_state_from_querystring(query_string=""):
+    """Read qid/label values from a query string for rehydrating page state."""
+    query = query_string.lstrip("?")
+    raw_params = parse_qs(query, keep_blank_values=True)
+    qid = (raw_params.get("qid", [""])[0] or "").strip()
+    label = (raw_params.get("label", [""])[0] or "").strip()
+    return {"qid": qid, "label": label}
 
 
 # ---------------------------------------------------
@@ -50,8 +70,12 @@ def search():
         "format": "json"
     }
 
-    r = requests.get(WIKIDATA_API, params=params)
-    data = r.json()
+    try:
+        r = requests.get(WIKIDATA_API, params=params, headers=HEADERS, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+    except (requests.RequestException, ValueError):
+        return jsonify([])
 
     results = []
     for item in data.get("search", []):

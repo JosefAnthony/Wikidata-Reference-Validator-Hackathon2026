@@ -103,9 +103,11 @@
 </div>
 
 <script>
-  const raw = localStorage.getItem("reportData");
+  const params = new URLSearchParams(window.location.search);
+  const reportPayload = params.get("data");
+  const raw = reportPayload ? JSON.parse(decodeURIComponent(reportPayload)) : localStorage.getItem("reportData");
   if (raw) {
-    const report = JSON.parse(raw);
+    const report = typeof raw === "string" ? JSON.parse(raw) : raw;
 
     // Fill badges
     document.getElementById("aliveCount").textContent = report.aliveCount;

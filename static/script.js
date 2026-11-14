@@ -1,3 +1,52 @@
+function getSearchStateFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    qid: params.get("qid") || "",
+    label: params.get("label") || ""
+  };
+}
+
+function updateSearchUrlState(qid, label) {
+  const params = new URLSearchParams(window.location.search);
+
+  if (qid) {
+    params.set("qid", qid);
+  } else {
+    params.delete("qid");
+  }
+
+  if (label) {
+    params.set("label", label);
+  } else {
+    params.delete("label");
+  }
+
+  const queryString = params.toString();
+  const nextUrl = `${window.location.pathname}${queryString ? `?${queryString}` : ""}`;
+  window.history.replaceState({}, "", nextUrl);
+}
+
+function clearSearchUrlState() {
+  const nextUrl = window.location.pathname;
+  window.history.replaceState({}, "", nextUrl);
+}
+
+function hydrateSearchFromUrl() {
+  const input = document.getElementById("search");
+  if (!input) return;
+
+  const { qid, label } = getSearchStateFromUrl();
+  if (!qid) {
+    if (label) input.value = label;
+    return;
+  }
+
+  input.value = label || "";
+  input.setAttribute("data-qid", qid);
+  input.setAttribute("data-label", label || input.value);
+  validate();
+}
+
 /**************************************
  * AUTOCOMPLETE SEARCH (UNCHANGED FLOW)
  **************************************/
@@ -8,18 +57,13 @@ document.getElementById("search").addEventListener("input", async function () {
 
   if (query.length < 3) return;
 
-  const response = await fetch(
-    `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(
-      query
-    )}&language=en&format=json&origin=*`
-  );
+  const response = await fetch(`/search?q=${encodeURIComponent(query)}`);
   const data = await response.json();
 
-  data.search.forEach(item => {
+  data.forEach(item => {
     const li = document.createElement("li");
     li.className = "list-group-item list-group-item-action";
 
-    // label + description (Wikidata-style)
     li.innerHTML = `
       <div>
         <strong>${item.label}</strong>
@@ -32,6 +76,7 @@ document.getElementById("search").addEventListener("input", async function () {
       input.value = item.label;
       input.setAttribute("data-qid", item.id);
       input.setAttribute("data-label", item.label);
+      updateSearchUrlState(item.id, item.label);
       suggestions.innerHTML = "";
     };
 
@@ -71,14 +116,16 @@ async function validate() {
   const resultDiv = document.getElementById("result");
   const searchSection = document.getElementById("searchSection");
 
-  // if (!qid && !label) {
-  //   resultDiv.innerHTML = `
-  //     <div class="alert alert-warning">
-  //       <i class="bi bi-exclamation-triangle"></i>
-  //       Please type a label or select an item first.
-  //     </div>`;
-  //   return;
-  // }
+  if (!qid) {
+    resultDiv.innerHTML = `
+      <div class="card p-4 text-center">
+        <div class="alert alert-warning">
+          <i class="bi bi-exclamation-triangle"></i>
+          Please search for and select a Wikidata item first.
+        </div>
+      </div>`;
+    return;
+  }
 
   searchSection.style.display = "none";
 
@@ -143,15 +190,17 @@ async function validate() {
 
     const aliveCount = data.filter(r => r.status === "alive").length;
     const deadCount = data.filter(r => r.status === "dead").length;
-
-    localStorage.setItem("reportData", JSON.stringify({
+    const reportSnapshot = {
       qid: qid || label,
       label,
       aliveCount,
       deadCount,
       references: data,
       duration
-    }));
+    };
+
+    localStorage.setItem("reportData", JSON.stringify(reportSnapshot));
+    updateSearchUrlState(qid || "", label || "");
 
     let html = `
       <div class="card p-4">
@@ -270,7 +319,8 @@ async function validate() {
     resultDiv.innerHTML = html;
 
     document.getElementById("viewReportBtn").onclick = () => {
-      window.open("/report", "_blank");
+      const encoded = encodeURIComponent(JSON.stringify(JSON.parse(localStorage.getItem("reportData") || "{}")));
+      window.open(`/report?data=${encoded}`, "_blank");
     };
 
   } catch (err) {
@@ -313,4 +363,7 @@ function resetSearch() {
   document.getElementById("search").removeAttribute("data-label");
   document.getElementById("result").innerHTML = "";
   searchSection.style.display = "block";
+  clearSearchUrlState();
 }
+
+document.addEventListener("DOMContentLoaded", hydrateSearchFromUrl);
