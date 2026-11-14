@@ -1,11 +1,35 @@
-from flask import Flask, request, jsonify, render_template
-import requests
+from flask import (
+    Flask,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 import aiohttp
 import asyncio
+import logging
+import os
 import re
-from urllib.parse import urlparse
+import secrets
+import time
+import traceback
+from urllib.parse import parse_qs, urlparse
+
+import jwt
+import requests
+from dotenv import load_dotenv
+from requests_oauthlib import OAuth1Session
+
+load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
 WAYBACK_API = "https://archive.org/wayback/available"
@@ -22,6 +46,61 @@ EXTERNAL_HEADERS = {
                   "Chrome/122.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 }
+
+
+# ---------------------------------------------------
+# WIKIMEDIA OAUTH
+# ---------------------------------------------------
+
+WIKIMEDIA_OAUTH_CONSUMER_KEY = os.environ.get("WIKIMEDIA_CONSUMER_KEY")
+WIKIMEDIA_OAUTH_CONSUMER_SECRET = os.environ.get("WIKIMEDIA_CONSUMER_SECRET")
+WIKIMEDIA_REQUEST_TOKEN_URL = (
+    "https://meta.wikimedia.org/w/index.php?title=Special:OAuth/initiate"
+)
+WIKIMEDIA_AUTHORIZE_URL = (
+    "https://meta.wikimedia.org/w/index.php?title=Special:OAuth/authorize"
+)
+WIKIMEDIA_ACCESS_TOKEN_URL = (
+    "https://meta.wikimedia.org/w/index.php?title=Special:OAuth/token"
+)
+WIKIMEDIA_IDENTIFY_URL = (
+    "https://meta.wikimedia.org/w/index.php?title=Special:OAuth/identify"
+)
+# Optional. Set this when the public callback URL differs from
+# url_for('callback', _external=True), e.g. behind a reverse proxy.
+WIKIMEDIA_REDIRECT_URI = os.environ.get("WIKIMEDIA_REDIRECT_URI")
+
+LOGIN_ERRORS = {
+    "wikimedia_cancelled": "Wikimedia sign-in was cancelled.",
+    "wikimedia_failed": "Wikimedia sign-in failed. Please try again.",
+    "wikimedia_not_configured": "Wikimedia sign-in is not configured yet.",
+    "wikimedia_session_expired": (
+        "Your Wikimedia sign-in session expired or could not be verified. "
+        "Please start the sign-in process again in this browser."
+    ),
+}
+
+# OAuth diagnostics are written to a file so login failures can be
+# investigated without relying on terminal scrollback. Never log tokens
+# or secrets here.
+oauth_logger = logging.getLogger("wikimedia_oauth")
+oauth_logger.setLevel(logging.INFO)
+oauth_logger.propagate = False
+if not oauth_logger.handlers:
+    _oauth_log_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "oauth_debug.log",
+    )
+    _oauth_file_handler = logging.FileHandler(_oauth_log_path, encoding="utf-8")
+    _oauth_file_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    )
+    oauth_logger.addHandler(_oauth_file_handler)
+    _oauth_console_handler = logging.StreamHandler()
+    _oauth_console_handler.setFormatter(
+        logging.Formatter("[%(name)s] %(message)s")
+    )
+    oauth_logger.addHandler(_oauth_console_handler)
 
 
 # ---------------------------------------------------
@@ -124,6 +203,156 @@ def categorize_source(url):
 
 
 # ---------------------------------------------------
+# OAUTH HELPERS
+# ---------------------------------------------------
+
+def wikimedia_oauth_configured():
+    return bool(WIKIMEDIA_OAUTH_CONSUMER_KEY and WIKIMEDIA_OAUTH_CONSUMER_SECRET)
+
+
+def wikimedia_callback_url():
+    return WIKIMEDIA_REDIRECT_URI or url_for("callback", _external=True)
+
+
+def _wikimedia_session(**kwargs):
+    oauth = OAuth1Session(
+        WIKIMEDIA_OAUTH_CONSUMER_KEY,
+        client_secret=WIKIMEDIA_OAUTH_CONSUMER_SECRET,
+        **kwargs,
+    )
+    oauth.headers.update(WIKIDATA_HEADERS)
+    return oauth
+
+
+def _wikimedia_request_token(callback_uri):
+    oauth = _wikimedia_session(callback_uri=callback_uri)
+    token = oauth.fetch_request_token(WIKIMEDIA_REQUEST_TOKEN_URL, timeout=15)
+    return oauth, token
+
+
+def _wikimedia_fetch_access_token(oauth):
+    """Exchange a request token + verifier for an access token.
+
+    Wikimedia returns some OAuth errors as HTTP 200 with a plain-text body,
+    which requests-oauthlib reports as an unhelpful "unable to decode token".
+    Posting directly lets us surface the real error in the server log.
+    """
+    response = oauth.post(WIKIMEDIA_ACCESS_TOKEN_URL, timeout=15)
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Token endpoint returned HTTP {response.status_code}: "
+            f"{response.text[:500]}"
+        )
+
+    token_data = {
+        key: values[0]
+        for key, values in parse_qs(response.text).items()
+    }
+    if not token_data.get("oauth_token") or not token_data.get("oauth_token_secret"):
+        raise RuntimeError(
+            f"Token endpoint did not return access tokens: {response.text[:500]}"
+        )
+    return token_data
+
+
+def _fetch_wikimedia_identity(access_token, access_token_secret):
+    """Identify the user with Special:OAuth/identify.
+
+    The API's meta=userinfo module is unavailable to consumers registered for
+    "user identity verification only"; /identify works for every consumer and
+    returns a JWT signed with the consumer secret.
+    """
+    oauth = _wikimedia_session(
+        resource_owner_key=access_token,
+        resource_owner_secret=access_token_secret,
+    )
+    response = oauth.post(WIKIMEDIA_IDENTIFY_URL, timeout=15)
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Identify endpoint returned HTTP {response.status_code}: "
+            f"{response.text[:500]}"
+        )
+
+    try:
+        identity = jwt.decode(
+            response.content,
+            WIKIMEDIA_OAUTH_CONSUMER_SECRET,
+            audience=WIKIMEDIA_OAUTH_CONSUMER_KEY,
+            algorithms=["HS256"],
+            leeway=10,
+            # MediaWiki's `sub` is a numeric central ID.
+            options={"verify_sub": False},
+        )
+    except jwt.InvalidTokenError as e:
+        raise RuntimeError(
+            f"Could not verify the Wikimedia identity JWT: {e}. "
+            f"Response: {response.text[:500]}"
+        ) from e
+
+    issuer = urlparse(identity.get("iss", "")).netloc
+    expected_issuer = urlparse(WIKIMEDIA_IDENTIFY_URL).netloc
+    if issuer != expected_issuer:
+        raise RuntimeError(
+            f"Unexpected identity issuer: {issuer!r}; "
+            f"expected {expected_issuer!r}."
+        )
+
+    try:
+        issued_at = float(identity["iat"])
+        expires_at = float(identity["exp"])
+    except (KeyError, TypeError, ValueError) as e:
+        raise RuntimeError("Wikimedia identity JWT is missing iat/exp.") from e
+
+    now = time.time()
+    if now < issued_at - 10:
+        raise RuntimeError("Wikimedia identity JWT was issued in the future.")
+    if now > expires_at + 10:
+        raise RuntimeError("Wikimedia identity JWT has expired.")
+
+    # The JWT nonce must match the OAuth nonce on the identify request.
+    # Some requests-oauthlib versions expose this header as bytes.
+    auth_header = response.request.headers.get("Authorization", "")
+    if isinstance(auth_header, bytes):
+        auth_header = auth_header.decode("utf-8", "replace")
+    nonce_match = re.search(r'oauth_nonce="([^"]+)"', auth_header)
+    if not nonce_match or identity.get("nonce") != nonce_match.group(1):
+        raise RuntimeError(
+            "Wikimedia identity JWT nonce does not match the request."
+        )
+
+    if not identity.get("username") or not identity.get("sub"):
+        raise RuntimeError(
+            "Wikimedia identity JWT is missing username/sub."
+        )
+
+    return identity
+
+
+def _store_wikimedia_login(access_token_data, identity):
+    access_token = access_token_data.get("oauth_token")
+    access_token_secret = access_token_data.get("oauth_token_secret")
+    if not access_token or not access_token_secret:
+        raise ValueError("Wikimedia did not return access tokens.")
+
+    # Fresh session after login, but keep the access tokens for future
+    # authenticated Wikimedia actions (e.g. editing references).
+    session.clear()
+    session["access_token"] = access_token
+    session["access_token_secret"] = access_token_secret
+    session["user"] = {
+        "name": identity.get("username") or identity.get("name"),
+        "id": identity.get("sub") or identity.get("id"),
+        "email": identity.get("email"),
+        "provider": "wikimedia",
+    }
+
+
+@app.context_processor
+def inject_current_user():
+    return {"user": session.get("user")}
+
+
+# ---------------------------------------------------
 # ROUTES
 # ---------------------------------------------------
 @app.route("/")
@@ -144,6 +373,177 @@ def use():
 @app.route("/report")
 def report():
     return render_template("report.html")
+
+
+@app.route("/login")
+def login():
+    if session.get("user"):
+        return redirect(url_for("home"))
+    return render_template(
+        "login.html",
+        wikimedia_enabled=wikimedia_oauth_configured(),
+        error=LOGIN_ERRORS.get(request.args.get("error")),
+    )
+
+
+@app.route("/auth/wikimedia")
+@app.route("/oauth_login")
+def oauth_login():
+    if session.get("user"):
+        return redirect(url_for("home"))
+
+    if not wikimedia_oauth_configured():
+        return redirect(url_for("login", error="wikimedia_not_configured"))
+
+    mode = "callback"
+    try:
+        oauth, token = _wikimedia_request_token(wikimedia_callback_url())
+    except Exception:
+        # Consumers registered for out-of-band (OOB) auth reject callback URLs.
+        try:
+            oauth, token = _wikimedia_request_token("oob")
+            mode = "oob"
+        except Exception as e:
+            oauth_logger.warning(f"Request token failed: {e}")
+            return redirect(url_for("login", error="wikimedia_failed"))
+
+    oauth_token = token.get("oauth_token")
+    oauth_token_secret = token.get("oauth_token_secret")
+    if not oauth_token or not oauth_token_secret:
+        oauth_logger.warning("Request token response was missing token values.")
+        return redirect(url_for("login", error="wikimedia_failed"))
+
+    session["wikimedia_request_token"] = oauth_token
+    session["wikimedia_request_token_secret"] = oauth_token_secret
+    session["wikimedia_mode"] = mode
+    oauth_logger.info(
+        f"Using {mode} authorization flow "
+        f"(callback: {wikimedia_callback_url() if mode == 'callback' else 'oob'})."
+    )
+
+    # Pass the request token explicitly so the URL never contains
+    # "oauth_token=None" (which happens if the session wasn't populated).
+    auth_url = oauth.authorization_url(
+        WIKIMEDIA_AUTHORIZE_URL,
+        request_token=oauth_token,
+    )
+
+    if mode == "oob":
+        return render_template("oauth_oob.html", auth_url=auth_url)
+
+    return redirect(auth_url)
+
+
+@app.route("/oauth_verify", methods=["GET", "POST"])
+def oauth_verify():
+    oauth_token = session.get("wikimedia_request_token")
+    oauth_token_secret = session.get("wikimedia_request_token_secret")
+    if not oauth_token or not oauth_token_secret:
+        oauth_logger.warning(
+            "No pending request token in session. The login expired or the "
+            "browser did not send the session cookie."
+        )
+        return redirect(url_for("login", error="wikimedia_session_expired"))
+
+    if request.method == "POST":
+        oauth_verifier = (request.form.get("oauth_verifier") or "").strip()
+        if not oauth_verifier:
+            return render_template(
+                "oauth_verify.html",
+                error="Please enter the verification code.",
+            )
+
+        oauth = _wikimedia_session(
+            resource_owner_key=oauth_token,
+            resource_owner_secret=oauth_token_secret,
+            verifier=oauth_verifier,
+        )
+
+        try:
+            access_token_data = _wikimedia_fetch_access_token(oauth)
+            identity = _fetch_wikimedia_identity(
+                access_token_data.get("oauth_token"),
+                access_token_data.get("oauth_token_secret"),
+            )
+            _store_wikimedia_login(access_token_data, identity)
+        except Exception:
+            oauth_logger.warning(
+                f"Verification failed:\n{traceback.format_exc()}"
+            )
+            return render_template(
+                "oauth_verify.html",
+                error="That verification code was not accepted. Please try again.",
+            )
+
+        return redirect(url_for("home"))
+
+    return render_template("oauth_verify.html", error=None)
+
+
+@app.route("/callback")
+def callback():
+    if not wikimedia_oauth_configured():
+        return redirect(url_for("login", error="wikimedia_not_configured"))
+
+    if request.args.get("denied") or request.args.get("oauth_problem"):
+        session.pop("wikimedia_request_token", None)
+        session.pop("wikimedia_request_token_secret", None)
+        session.pop("wikimedia_mode", None)
+        return redirect(url_for("login", error="wikimedia_cancelled"))
+
+    oauth_token = request.args.get("oauth_token")
+    oauth_verifier = request.args.get("oauth_verifier")
+    stored_token = session.get("wikimedia_request_token")
+    stored_token_secret = session.get("wikimedia_request_token_secret")
+
+    if not oauth_token or not oauth_verifier:
+        oauth_logger.warning("Callback was missing oauth_token/oauth_verifier.")
+        return redirect(url_for("login", error="wikimedia_session_expired"))
+
+    if not stored_token or not stored_token_secret:
+        oauth_logger.warning(
+            "Callback had no request token in session. The session cookie was "
+            "likely lost (host change, expired session, or cookies blocked). "
+            f"Callback host: {request.host}"
+        )
+        return redirect(url_for("login", error="wikimedia_session_expired"))
+
+    if not secrets.compare_digest(stored_token, oauth_token):
+        oauth_logger.warning(
+            "Callback oauth_token did not match the session. "
+            "A stale or concurrent login was probably used."
+        )
+        return redirect(url_for("login", error="wikimedia_session_expired"))
+
+    oauth = _wikimedia_session(
+        resource_owner_key=stored_token,
+        resource_owner_secret=stored_token_secret,
+        verifier=oauth_verifier,
+    )
+
+    try:
+        access_token_data = _wikimedia_fetch_access_token(oauth)
+        identity = _fetch_wikimedia_identity(
+            access_token_data.get("oauth_token"),
+            access_token_data.get("oauth_token_secret"),
+        )
+        _store_wikimedia_login(access_token_data, identity)
+    except Exception:
+        oauth_logger.warning(
+            f"Callback failed:\n{traceback.format_exc()}"
+        )
+        session.pop("wikimedia_request_token", None)
+        session.pop("wikimedia_request_token_secret", None)
+        session.pop("wikimedia_mode", None)
+        return redirect(url_for("login", error="wikimedia_failed"))
+
+    return redirect(url_for("home"))
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("home"))
 
 
 @app.route("/search")

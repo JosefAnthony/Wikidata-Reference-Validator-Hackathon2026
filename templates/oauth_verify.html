@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Verification code – Wikidata Reference Validator{% endblock %}
+{% block body_class %}page-auth{% endblock %}
+
+{% block content %}
+<section class="auth">
+  <div class="auth__panel">
+    <p class="page__eyebrow">Wikimedia login</p>
+    <h1 class="auth__title">Verification code</h1>
+    <p class="auth__lead">
+      Paste the code Wikimedia showed you after authorizing this app.
+    </p>
+
+    {% if error %}
+    <div class="auth__error" role="alert">
+      <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+      <span>{{ error }}</span>
+    </div>
+    {% endif %}
+
+    <form class="auth__form" method="post" action="{{ url_for('oauth_verify') }}">
+      <label class="auth__label" for="oauth_verifier">Verification code</label>
+      <input
+        class="auth__input"
+        type="text"
+        id="oauth_verifier"
+        name="oauth_verifier"
+        autocomplete="one-time-code"
+        spellcheck="false"
+        required
+        autofocus
+      >
+      <button type="submit" class="btn-solid auth__submit">
+        <i class="bi bi-check-circle" aria-hidden="true"></i>
+        <span>Submit code</span>
+      </button>
+    </form>
+
+    <p class="auth__back">
+      <a href="{{ url_for('oauth_login') }}">Start over</a>
+      <span aria-hidden="true">·</span>
+      <a href="{{ url_for('login') }}">Back to login</a>
+    </p>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    var form = document.querySelector(".auth__form");
+    if (!form) return;
+    form.addEventListener("submit", function () {
+      var button = form.querySelector("button[type='submit']");
+      if (!button) return;
+      button.disabled = true;
+      button.innerHTML =
+        '<span class="auth__spinner" aria-hidden="true"></span>' +
+        '<span>Verifying…</span>';
+    });
+  })();
+</script>
+{% endblock %}

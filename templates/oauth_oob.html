@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Authorize with Wikimedia – Wikidata Reference Validator{% endblock %}
+{% block body_class %}page-auth{% endblock %}
+
+{% block content %}
+<section class="auth">
+  <div class="auth__panel">
+    <p class="page__eyebrow">Wikimedia login</p>
+    <h1 class="auth__title">Authorize with Wikimedia</h1>
+    <p class="auth__lead">
+      This OAuth consumer uses out-of-band authorization. Open Wikimedia,
+      approve access, then copy the verification code it shows you.
+    </p>
+
+    <ol class="auth__steps">
+      <li>Open the Wikimedia authorization page and approve access.</li>
+      <li>Copy the verification code Wikimedia displays.</li>
+      <li>Paste the code below and submit it.</li>
+    </ol>
+
+    <a class="btn-solid auth__submit" href="{{ auth_url }}" target="_blank" rel="noopener">
+      <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+      <span>Open Wikimedia authorization</span>
+    </a>
+
+    <div class="auth__divider" aria-hidden="true"></div>
+
+    <h2 class="auth__subtitle">Enter verification code</h2>
+    <form class="auth__form" method="post" action="{{ url_for('oauth_verify') }}">
+      <label class="auth__label" for="oauth_verifier">Verification code</label>
+      <input
+        class="auth__input"
+        type="text"
+        id="oauth_verifier"
+        name="oauth_verifier"
+        autocomplete="one-time-code"
+        spellcheck="false"
+        required
+        autofocus
+      >
+      <button type="submit" class="btn-solid auth__submit">
+        <i class="bi bi-check-circle" aria-hidden="true"></i>
+        <span>Submit code</span>
+      </button>
+    </form>
+
+    <p class="auth__back">
+      <a href="{{ url_for('login') }}">Cancel and return to login</a>
+    </p>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    var form = document.querySelector(".auth__form");
+    if (!form) return;
+    form.addEventListener("submit", function () {
+      var button = form.querySelector("button[type='submit']");
+      if (!button) return;
+      button.disabled = true;
+      button.innerHTML =
+        '<span class="auth__spinner" aria-hidden="true"></span>' +
+        '<span>Verifying…</span>';
+    });
+  })();
+</script>
+{% endblock %}

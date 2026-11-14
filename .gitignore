@@ -8,3 +8,11 @@ venv/
 # Ignore main config file
 /config.py
 
+# Ignore environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# OAuth diagnostic log
+oauth_debug.log
+

@@ -11,6 +11,7 @@ This tool checks the external reference URLs on a Wikidata item (QID) to determi
 * ⚡ Checks if the referenced URLs are reachable (alive or dead)
 * ❌ Flags dead links and shows which statement they belong to
 * ✏️ Provides a one-click "Edit" button to fix or update the reference
+* 🔐 Optional Wikimedia login (OAuth 1.0a) for identifying users
 
 ---
 
@@ -79,7 +80,45 @@ Your prompt should now start with `(.venv)`.
 pip install -r requirements.txt
 ```
 
-### 4. Run the app
+### 4. Set up Wikimedia OAuth (optional, for Wikimedia login)
+
+Logging in is optional; validation works without an account. To enable the
+**Log in** button:
+
+1. Go to https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration
+2. Register a new OAuth consumer with either:
+   - a callback URL of `http://127.0.0.1:5000/callback` (normal redirect), or
+   - out-of-band (OOB) authorization, where the user copies a verification code.
+
+   The app supports both modes and detects which one the consumer uses.
+3. Copy the Consumer Key and Consumer Secret.
+4. Create a `.env` file in the project root (copy `.env.example`) and fill it in:
+
+```bash
+SECRET_KEY=change-me-to-a-random-string
+WIKIMEDIA_CONSUMER_KEY=your_consumer_key
+WIKIMEDIA_CONSUMER_SECRET=your_consumer_secret
+```
+
+On Windows Command Prompt you can also set them for the current session:
+
+```bat
+set WIKIMEDIA_CONSUMER_KEY=your_consumer_key
+set WIKIMEDIA_CONSUMER_SECRET=your_consumer_secret
+```
+
+5. If the app is deployed behind a reverse proxy, or its public URL differs from
+   `http://127.0.0.1:5000`, set `WIKIMEDIA_REDIRECT_URI` to the exact callback
+   URL registered for the consumer:
+
+```bash
+WIKIMEDIA_REDIRECT_URI=https://example.org/callback
+```
+
+> 🔒 `.env` and `oauth_debug.log` are ignored by git. Never commit consumer
+> secrets or Flask session keys.
+
+### 5. Run the app
 
 ```bash
 python app.py

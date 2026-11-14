@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Log in – Wikidata Reference Validator{% endblock %}
+{% block body_class %}page-auth{% endblock %}
+
+{% block content %}
+<section class="auth">
+  <div class="auth__panel">
+    <p class="page__eyebrow">Account</p>
+    <h1 class="auth__title">Log in to the validator</h1>
+    <p class="auth__lead">
+      Sign in with your Wikimedia account. Logging in is optional — you can
+      validate references without an account.
+    </p>
+
+    {% if error %}
+    <div class="auth__error" role="alert">
+      <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+      <span>{{ error }}</span>
+    </div>
+    {% endif %}
+
+    {% if wikimedia_enabled %}
+    <form class="auth__form" action="{{ url_for('oauth_login') }}" method="get">
+      <button type="submit" class="btn-solid auth__submit" data-loading-label="Redirecting to Wikimedia…">
+        <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
+        <span>Log in with Wikimedia</span>
+      </button>
+    </form>
+    <p class="auth__hint">
+      You will be redirected to Wikimedia to authorize this app. Your password
+      is never shared with us.
+    </p>
+    {% else %}
+    <button type="button" class="btn-solid auth__submit" disabled>
+      <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
+      <span>Log in with Wikimedia</span>
+    </button>
+    <p class="auth__hint auth__hint--warning">
+      Wikimedia sign-in is not configured. Add
+      <code>WIKIMEDIA_CONSUMER_KEY</code> and
+      <code>WIKIMEDIA_CONSUMER_SECRET</code> to your environment or
+      <code>.env</code> file.
+    </p>
+    {% endif %}
+
+    <p class="auth__back">
+      <a href="{{ url_for('home') }}">← Back to the validator</a>
+    </p>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    var form = document.querySelector(".auth__form");
+    if (!form) return;
+    form.addEventListener("submit", function () {
+      var button = form.querySelector("button[type='submit']");
+      if (!button) return;
+      button.disabled = true;
+      button.innerHTML =
+        '<span class="auth__spinner" aria-hidden="true"></span>' +
+        '<span>Redirecting to Wikimedia…</span>';
+    });
+  })();
+</script>
+{% endblock %}
