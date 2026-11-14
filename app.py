@@ -2,11 +2,13 @@ from flask import Flask, request, jsonify, render_template
 import requests
 import aiohttp
 import asyncio
+import re
 
 app = Flask(__name__)
 
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
 WAYBACK_API = "https://archive.org/wayback/available"
+QID_PATTERN = re.compile(r"^Q[1-9]\d*$")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -39,7 +41,7 @@ def report():
 
 @app.route("/search")
 def search():
-    query = request.args.get("q")
+    query = request.args.get("q", "").strip()
     if not query:
         return jsonify([])
 
@@ -47,19 +49,28 @@ def search():
         "action": "wbsearchentities",
         "search": query,
         "language": "en",
-        "format": "json"
+        "format": "json",
+        "type": "item",
+        "limit": 50
     }
 
-    r = requests.get(WIKIDATA_API, params=params)
-    data = r.json()
+    try:
+        r = requests.get(WIKIDATA_API, params=params, headers=HEADERS, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+    except requests.RequestException as e:
+        print(f"[Search failed] {query}: {e}")
+        return jsonify({"error": "Could not search Wikidata. Please try again."}), 502
 
     results = []
     for item in data.get("search", []):
-        results.append({
-            "id": item.get("id"),
-            "label": item.get("label"),
-            "description": item.get("description", "")
-        })
+        item_id = item.get("id")
+        if item_id and QID_PATTERN.match(item_id):
+            results.append({
+                "id": item_id,
+                "label": item.get("label"),
+                "description": item.get("description", "")
+            })
 
     return jsonify(results)
 
@@ -158,11 +169,23 @@ def fetch_labels(ids):
 
 @app.route("/validate", methods=["POST"])
 def validate_references():
-    data = request.get_json(force=True)
-    if not data or "qid" not in data:
-        return jsonify({"error": "Missing QID"}), 400
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({
+            "error": "Invalid request. Please select a Wikidata item."
+        }), 400
 
-    qid = data["qid"].strip()
+    raw_qid = data.get("qid")
+    if not isinstance(raw_qid, str) or not raw_qid.strip():
+        return jsonify({
+            "error": "Please select a valid Wikidata item before validating."
+        }), 400
+
+    qid = raw_qid.strip().upper()
+    if not QID_PATTERN.match(qid):
+        return jsonify({
+            "error": "Invalid QID. Please select an item from the suggestions."
+        }), 400
 
     try:
         params = {
@@ -174,7 +197,16 @@ def validate_references():
         r = requests.get(WIKIDATA_API, params=params, headers=HEADERS, timeout=15)
         r.raise_for_status()
 
-        entity = r.json()["entities"].get(qid, {})
+        payload = r.json()
+        entity = payload.get("entities", {}).get(qid, {})
+
+        # Wikidata returns a "missing" marker for QIDs that do not exist.
+        if not entity or "missing" in entity or entity.get("id") != qid:
+            return jsonify({
+                "error": f"Wikidata item {qid} was not found. "
+                         "Please select a valid item."
+            }), 404
+
         claims = entity.get("claims", {})
 
         refs_data = []

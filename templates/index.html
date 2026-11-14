@@ -60,8 +60,10 @@
 <div id="searchSection" class="card glass-card p-4 mb-4">
   <div class="mb-3 position-relative">
     <input type="text" id="search" class="form-control form-control-lg"
-           placeholder="Search for a Wikidata Items (e.g., Albert Einstein)">
+           placeholder="Search for a Wikidata Items (e.g., Albert Einstein)"
+           autocomplete="off" aria-describedby="searchFeedback">
     <ul id="suggestions" class="list-group"></ul>
+    <div id="searchFeedback" class="invalid-feedback" role="alert"></div>
   </div>
   <div class="text-center">
     <button class="btn btn-lg btn-glass shadow" onclick="validate()">

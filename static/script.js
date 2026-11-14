@@ -1,42 +1,84 @@
 /**************************************
- * AUTOCOMPLETE SEARCH (UNCHANGED FLOW)
+ * AUTOCOMPLETE SEARCH
  **************************************/
-document.getElementById("search").addEventListener("input", async function () {
-  const query = this.value;
-  const suggestions = document.getElementById("suggestions");
-  suggestions.innerHTML = "";
+const searchInput = document.getElementById("search");
+const suggestionsList = document.getElementById("suggestions");
+const QID_PATTERN = /^Q[1-9]\d*$/i;
+
+function clearSelectedItem() {
+  searchInput.removeAttribute("data-qid");
+  searchInput.removeAttribute("data-label");
+}
+
+function showSearchError(message) {
+  const feedback = document.getElementById("searchFeedback");
+  searchInput.classList.add("is-invalid");
+  if (feedback) feedback.textContent = message;
+
+  document.getElementById("result").innerHTML = `
+    <div class="card p-4 text-center">
+      <div class="alert alert-warning mb-0" role="alert">
+        <i class="bi bi-exclamation-triangle"></i>
+        <span id="searchErrorMessage"></span>
+      </div>
+    </div>`;
+
+  document.getElementById("searchErrorMessage").textContent = message;
+  searchInput.focus();
+}
+
+function clearSearchError() {
+  const feedback = document.getElementById("searchFeedback");
+  searchInput.classList.remove("is-invalid");
+  if (feedback) feedback.textContent = "";
+}
+
+searchInput.addEventListener("input", async function () {
+  const query = this.value.trim();
+
+  // Any manual edit invalidates the previously selected item.
+  clearSelectedItem();
+  clearSearchError();
+  suggestionsList.innerHTML = "";
 
   if (query.length < 3) return;
 
-  const response = await fetch(
-    `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(
-      query
-    )}&language=en&format=json&origin=*`
-  );
-  const data = await response.json();
+  try {
+    const response = await fetch(
+      `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(
+        query
+      )}&language=en&format=json&origin=*`
+    );
+    const data = await response.json();
 
-  data.search.forEach(item => {
-    const li = document.createElement("li");
-    li.className = "list-group-item list-group-item-action";
+    (data.search || []).forEach(item => {
+      if (!item.id || !QID_PATTERN.test(item.id)) return;
 
-    // label + description (Wikidata-style)
-    li.innerHTML = `
-      <div>
-        <strong>${item.label}</strong>
-        <div class="small text-muted">${item.description || ""}</div>
-      </div>
-    `;
+      const li = document.createElement("li");
+      li.className = "list-group-item list-group-item-action";
 
-    li.onclick = () => {
-      const input = document.getElementById("search");
-      input.value = item.label;
-      input.setAttribute("data-qid", item.id);
-      input.setAttribute("data-label", item.label);
-      suggestions.innerHTML = "";
-    };
+      // label + description (Wikidata-style)
+      li.innerHTML = `
+        <div>
+          <strong>${item.label}</strong>
+          <div class="small text-muted">${item.description || ""}</div>
+        </div>
+      `;
 
-    suggestions.appendChild(li);
-  });
+      li.onclick = () => {
+        searchInput.value = item.label;
+        searchInput.setAttribute("data-qid", item.id);
+        searchInput.setAttribute("data-label", item.label);
+        clearSearchError();
+        suggestionsList.innerHTML = "";
+        searchInput.focus();
+      };
+
+      suggestionsList.appendChild(li);
+    });
+  } catch (err) {
+    suggestionsList.innerHTML = "";
+  }
 });
 
 /**************************************
@@ -62,24 +104,99 @@ async function getPropertyLabel(pid) {
 }
 
 /**************************************
+ * ITEM RESOLUTION
+ **************************************/
+async function resolveQidFromLabel(label) {
+  const trimmed = label.trim();
+
+  if (!trimmed) {
+    return { error: "Please select a Wikidata item before validating." };
+  }
+
+  // Allow users to paste a QID directly.
+  if (QID_PATTERN.test(trimmed)) {
+    const qid = trimmed.toUpperCase();
+    return { qid, label: qid };
+  }
+
+  let results;
+  try {
+    const response = await fetch(`/search?q=${encodeURIComponent(trimmed)}`);
+    if (!response.ok) throw new Error("Lookup failed");
+    results = await response.json();
+  } catch (err) {
+    return {
+      error: "Could not look up that item. Please select one from the suggestions."
+    };
+  }
+
+  const normalized = trimmed.toLowerCase();
+  const exactMatches = (Array.isArray(results) ? results : []).filter(
+    item =>
+      item.id &&
+      QID_PATTERN.test(item.id) &&
+      (item.label || "").trim().toLowerCase() === normalized
+  );
+
+  if (exactMatches.length === 1) {
+    return { qid: exactMatches[0].id, label: exactMatches[0].label };
+  }
+
+  if (exactMatches.length > 1) {
+    return {
+      error: `Multiple Wikidata items match "${trimmed}". Please choose one from the suggestions.`
+    };
+  }
+
+  return {
+    error: `No Wikidata item found for "${trimmed}". Please select one from the suggestions.`
+  };
+}
+
+/**************************************
  * VALIDATE REFERENCES (FIXED + SAFE)
  **************************************/
 async function validate() {
-  const input = document.getElementById("search");
-  const qid = input.getAttribute("data-qid");
-  const label = input.getAttribute("data-label") || input.value;
+  const input = searchInput;
   const resultDiv = document.getElementById("result");
   const searchSection = document.getElementById("searchSection");
 
-  // if (!qid && !label) {
-  //   resultDiv.innerHTML = `
-  //     <div class="alert alert-warning">
-  //       <i class="bi bi-exclamation-triangle"></i>
-  //       Please type a label or select an item first.
-  //     </div>`;
-  //   return;
-  // }
+  const typedValue = input.value.trim();
+  const selectedLabel = (input.getAttribute("data-label") || "").trim();
+  let label = selectedLabel || typedValue;
+  let qid = (input.getAttribute("data-qid") || "").trim().toUpperCase();
 
+  // A previous selection is only valid while the input still shows its label.
+  if (
+    qid &&
+    selectedLabel &&
+    selectedLabel.toLowerCase() !== typedValue.toLowerCase()
+  ) {
+    qid = "";
+  }
+
+  if (qid && !QID_PATTERN.test(qid)) {
+    qid = "";
+  }
+
+  // If nothing was picked from the autocomplete, try to resolve the typed
+  // label. Ambiguous or unknown labels are rejected with a clear message.
+  if (!qid) {
+    const resolved = await resolveQidFromLabel(typedValue);
+    if (!resolved.qid) {
+      showSearchError(resolved.error);
+      return;
+    }
+
+    qid = resolved.qid;
+    label = resolved.label || label;
+
+    input.value = label;
+    input.setAttribute("data-qid", qid);
+    input.setAttribute("data-label", label);
+  }
+
+  clearSearchError();
   searchSection.style.display = "none";
 
   let remaining = 30;
@@ -308,9 +425,11 @@ document.addEventListener("hidden.bs.collapse", e => {
  **************************************/
 function resetSearch() {
   const searchSection = document.getElementById("searchSection");
-  document.getElementById("search").value = "";
-  document.getElementById("search").removeAttribute("data-qid");
-  document.getElementById("search").removeAttribute("data-label");
+  searchInput.value = "";
+  clearSelectedItem();
+  clearSearchError();
+  suggestionsList.innerHTML = "";
   document.getElementById("result").innerHTML = "";
   searchSection.style.display = "block";
+  searchInput.focus();
 }
