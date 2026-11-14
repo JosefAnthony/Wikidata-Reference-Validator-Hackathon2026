@@ -171,11 +171,19 @@
             <p><strong>Property:</strong> ${ref.propertyLabel}</p>
             ${ref.statementValue ? `<p><strong>Value:</strong> ${ref.statementValue}</p>` : ""}
             <p><a href="${ref.url}" target="_blank" title="${ref.url}">${ref.url}</a></p>
-            ${
+${
               ref.status === "dead"
-              ? `<div class="alert alert-warning p-2 mt-2">
-                   ⚠️ Suggestion: Please review or update this reference.
-                 </div>`
+              ? `
+                <div class="mt-2">
+                  <div class="fw-bold text-danger">Failure Reason:</div>
+                  <div class="small">
+                    ${ref.statusCode ? `HTTP ${ref.statusCode}` : ""}
+                    ${ref.error ? `${ref.statusCode ? " - " : ""}${ref.error}` : ""}
+                  </div>
+                </div>
+                <div class="alert alert-warning p-2 mt-2">
+                  ⚠️ Suggestion: Please review or update this reference.
+                </div>`
               : ""
             }
           </div>

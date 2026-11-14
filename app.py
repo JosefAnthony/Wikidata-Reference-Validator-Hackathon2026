@@ -72,17 +72,43 @@ async def check_url(session, url):
     try:
         async with session.head(url, allow_redirects=True, timeout=5) as resp:
             if resp.status < 400 or resp.status in (401, 403):
-                return {"url": url, "status": "alive"}
-    except Exception:
-        pass
+                return {"url": url, "status": "alive", "statusCode": resp.status}
+            return {"url": url, "status": "dead", "statusCode": resp.status, "error": get_error_message(resp.status)}
+    except asyncio.TimeoutError:
+        return {"url": url, "status": "dead", "error": "Timeout"}
+    except aiohttp.ClientConnectorError:
+        return {"url": url, "status": "dead", "error": "DNS Error"}
+    except aiohttp.ClientError as e:
+        return {"url": url, "status": "dead", "error": str(e)}
 
     try:
         async with session.get(url, allow_redirects=True, timeout=10) as resp:
             if resp.status < 400 or resp.status in (401, 403):
-                return {"url": url, "status": "alive"}
-            return {"url": url, "status": "dead"}
-    except Exception:
-        return {"url": url, "status": "dead"}
+                return {"url": url, "status": "alive", "statusCode": resp.status}
+            return {"url": url, "status": "dead", "statusCode": resp.status, "error": get_error_message(resp.status)}
+    except asyncio.TimeoutError:
+        return {"url": url, "status": "dead", "error": "Timeout"}
+    except aiohttp.ClientConnectorError:
+        return {"url": url, "status": "dead", "error": "DNS Error"}
+    except aiohttp.ClientError as e:
+        return {"url": url, "status": "dead", "error": str(e)}
+
+
+def get_error_message(status_code):
+    """Return a short explanation for common HTTP status codes."""
+    messages = {
+        400: "Bad Request",
+        401: "Unauthorized",
+        403: "Forbidden",
+        404: "Not Found",
+        408: "Request Timeout",
+        429: "Too Many Requests",
+        500: "Internal Server Error",
+        502: "Bad Gateway",
+        503: "Service Unavailable",
+        504: "Gateway Timeout",
+    }
+    return messages.get(status_code, f"HTTP {status_code}")
 
 
 # ---------------------------------------------------

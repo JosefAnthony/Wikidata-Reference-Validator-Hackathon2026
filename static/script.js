@@ -207,52 +207,59 @@ async function validate() {
             </div>
           </div>
 
-          <div class="collapse mt-2" id="${collapseId}">
-            <div class="p-2 border rounded bg-light">
-              <div class="fw-bold">Statement:</div>
-              <div>
-                <strong>${ref.propertyLabel}</strong>
-                ${ref.statementValue ? `: <em>${ref.statementValue}</em>` : ""}
-              </div>
+<div class="collapse mt-2" id="${collapseId}">
+             <div class="p-2 border rounded bg-light">
+               <div class="fw-bold">Statement:</div>
+               <div>
+                 <strong>${ref.propertyLabel}</strong>
+                 ${ref.statementValue ? `: <em>${ref.statementValue}</em>` : ""}
+               </div>
 
-              ${
-                ref.status === "dead"
-                  ? `
-                    <div class="mt-2 alert alert-warning p-2 mb-1">
-                      <i class="bi bi-exclamation-triangle me-1"></i>
-                      <strong>Reference unavailable.</strong>
-                      Please review or update this reference.
-                    </div>
-                  `
-                  : ""
-              }
+               ${
+                 ref.status === "dead"
+                   ? `
+                     <div class="mt-2">
+                       <div class="fw-bold text-danger">Failure Reason:</div>
+                       <div class="small">
+                         ${ref.statusCode ? `HTTP ${ref.statusCode}` : ""}
+                         ${ref.error ? `${ref.statusCode ? " - " : ""}${ref.error}` : ""}
+                       </div>
+                     </div>
+                     <div class="mt-2 alert alert-warning p-2 mb-1">
+                       <i class="bi bi-exclamation-triangle me-1"></i>
+                       <strong>Reference unavailable.</strong>
+                       Please review or update this reference.
+                     </div>
+                   `
+                   : ""
+               }
 
-              ${
-                ref.status === "dead" && ref.suggestedArchive
-                  ? `
-                    <div class="mt-2 small">
-                      🔁 <strong>Suggested archived version:</strong>
-                      <a href="${ref.suggestedArchive.archiveUrl}"
-                         target="_blank"
-                         class="fw-semibold link-primary">
-                        View on Wayback Machine
-                      </a>
-                    </div>
-                  `
-                  : ""
-              }
+               ${
+                 ref.status === "dead" && ref.suggestedArchive
+                   ? `
+                     <div class="mt-2 small">
+                       🔁 <strong>Suggested archived version:</strong>
+                       <a href="${ref.suggestedArchive.archiveUrl}"
+                          target="_blank"
+                          class="fw-semibold link-primary">
+                         View on Wayback Machine
+                       </a>
+                     </div>
+                   `
+                   : ""
+               }
 
-              ${
-                ref.status === "dead" && !ref.suggestedArchive
-                  ? `
-                    <div class="mt-2 small text-muted">
-                      📭 No archived snapshot found on Wayback Machine.
-                    </div>
-                  `
-                  : ""
-              }
-            </div>
-          </div>
+               ${
+                 ref.status === "dead" && !ref.suggestedArchive
+                   ? `
+                     <div class="mt-2 small text-muted">
+                       📭 No archived snapshot found on Wayback Machine.
+                     </div>
+                   `
+                   : ""
+               }
+             </div>
+           </div>
         </li>
       `;
     });
