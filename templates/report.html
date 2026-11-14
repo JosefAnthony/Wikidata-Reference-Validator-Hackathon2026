@@ -103,9 +103,10 @@
 </div>
 
 <script>
+  let report = null;
   const raw = localStorage.getItem("reportData");
   if (raw) {
-    const report = JSON.parse(raw);
+    report = JSON.parse(raw);
 
     // Fill badges
     document.getElementById("aliveCount").textContent = report.aliveCount;
@@ -199,6 +200,38 @@
   const downloadBtn = document.getElementById("downloadBtn");
   if (downloadBtn) {
     downloadBtn.onclick = () => {
+      if (!report) return;
+
+      const escapeCsvField = value => {
+        const field = value == null ? "" : String(value);
+        return /[",\r\n]/.test(field) ? `"${field.replace(/"/g, '""')}"` : field;
+      };
+      const columns = [
+        ["URL", ref => ref && ref.url],
+        ["Status", ref => ref && ref.status],
+        ["Property", ref => ref && ref.propertyLabel],
+        ["Statement Value", ref => ref && ref.statementValue],
+        [
+          "Suggested Archive URL",
+          ref => ref && ref.suggestedArchive && ref.suggestedArchive.archiveUrl
+        ]
+      ];
+      const rows = [
+        columns.map(([header]) => escapeCsvField(header)),
+        ...(Array.isArray(report.references) ? report.references : []).map(ref =>
+          columns.map(([, getValue]) => escapeCsvField(getValue(ref)))
+        )
+      ];
+      const csv = rows.map(row => row.join(",")).join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "reference-results.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
     };
   }
 </script>
