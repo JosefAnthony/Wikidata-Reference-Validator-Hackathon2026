@@ -3,6 +3,7 @@ __pycache__/
 
 # Ignore virtual environment
 .venv/
+venv/
 
 # Ignore main config file
 /config.py
