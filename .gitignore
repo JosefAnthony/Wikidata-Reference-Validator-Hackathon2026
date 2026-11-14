@@ -8,3 +8,6 @@ venv/
 # Ignore main config file
 /config.py
 
+# Ignore local coding assistant instructions
+AGENTS.md
+
