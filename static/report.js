@@ -19,6 +19,13 @@
   const archived = refs.filter(r => r.status === "dead" && r.suggestedArchive).length;
   const health = refs.length ? Math.round((alive / refs.length) * 100) : 0;
 
+  /* ---------- Back links ---------- */
+  if (report.qid) {
+    const back = document.getElementById("backToResults");
+    back.href = `/?item=${encodeURIComponent(report.qid)}`;
+    back.hidden = false;
+  }
+
   /* ---------- Header & summary ---------- */
   document.title = `${report.label} report – Wikidata Reference Validator`;
   document.getElementById("reportTitle").textContent = report.label || report.qid;
@@ -54,15 +61,17 @@
     const isDead = r.status === "dead";
     return `
       <tr>
-        <td><span class="status-pill status-pill--${isDead ? "dead" : "alive"}">${isDead ? "Unreachable" : "Alive"}</span></td>
-        <td>
-          <div>${escapeHtml(r.propertyLabel || r.propertyId || "")}</div>
-          ${r.statementValue ? `<div style="color: var(--text-faint); font-size: 0.8rem">${escapeHtml(r.statementValue)}</div>` : ""}
+        <td data-label="Status"><span class="status-pill status-pill--${isDead ? "dead" : "alive"}">${isDead ? "Unreachable" : "Alive"}</span></td>
+        <td data-label="Statement">
+          <div>
+            <div>${escapeHtml(r.propertyLabel || r.propertyId || "")}</div>
+            ${r.statementValue ? `<div style="color: var(--text-faint); font-size: 0.8rem; overflow-wrap: anywhere">${escapeHtml(r.statementValue)}</div>` : ""}
+          </div>
         </td>
-        <td class="url-cell"><a href="${escapeHtml(safeUrl(r.url))}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(r.url)}">${escapeHtml(r.url)}</a></td>
-        <td><span class="tag"><i class="bi ${meta.icon}"></i> ${meta.label}</span></td>
-        <td class="mono">${r.httpStatus ? escapeHtml(r.httpStatus) : "—"}</td>
-        <td>${r.suggestedArchive
+        <td class="url-cell" data-label="URL"><a href="${escapeHtml(safeUrl(r.url))}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(r.url)}">${escapeHtml(r.url)}</a></td>
+        <td data-label="Source"><span class="tag"><i class="bi ${meta.icon}"></i> ${meta.label}</span></td>
+        <td class="mono" data-label="HTTP">${r.httpStatus ? escapeHtml(r.httpStatus) : "—"}</td>
+        <td data-label="Archive">${r.suggestedArchive
           ? `<a href="${escapeHtml(safeUrl(r.suggestedArchive.archiveUrl))}" target="_blank" rel="noopener noreferrer">${escapeHtml(formatArchiveDate(r.suggestedArchive.timestamp) || "Snapshot")}</a>`
           : `<span style="color: var(--text-faint)">—</span>`}</td>
       </tr>`;

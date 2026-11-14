@@ -4,6 +4,15 @@
 
 {% block content %}
 <article class="page page--wide" id="report">
+  <nav class="page-actions" aria-label="Back">
+    <a class="back-link" href="{{ url_for('home') }}" id="backHome">
+      <i class="bi bi-arrow-left" aria-hidden="true"></i> Home
+    </a>
+    <a class="back-link" href="{{ url_for('home') }}" id="backToResults" hidden>
+      <i class="bi bi-list-check" aria-hidden="true"></i> Back to results
+    </a>
+  </nav>
+
   <div class="report-head">
     <div>
       <p class="page__eyebrow">Validation report</p>
@@ -49,6 +58,9 @@
 </article>
 
 <div class="page" id="reportEmpty" hidden>
+  <a class="back-link" href="{{ url_for('home') }}">
+    <i class="bi bi-arrow-left" aria-hidden="true"></i> Home
+  </a>
   <div class="empty">
     <i class="bi bi-clipboard-data" aria-hidden="true"></i>
     <p>No report yet. Run a validation first.</p>

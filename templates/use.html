@@ -49,9 +49,18 @@
 
     <h2>Example</h2>
     <figure>
-      <img src="{{ url_for('static', filename='dead-reference-example.jpg') }}"
-           alt="Example of a dead reference result in the Wikidata Reference Validator" loading="lazy">
-      <figcaption>A dead reference with a suggested archived version (screenshot from an earlier version of the tool).</figcaption>
+      <img class="theme-img theme-img--light"
+           src="{{ url_for('static', filename='how-to-example-light.webp') }}"
+           alt="Results for Douglas Adams (Q42): a summary of 62 references with 6 unreachable, the Unreachable filter selected, and two dead references, one with an archived copy from 19 Oct 2017 and one with no snapshot found"
+           width="1664" height="1801" loading="lazy">
+      <img class="theme-img theme-img--dark"
+           src="{{ url_for('static', filename='how-to-example-dark.webp') }}"
+           alt="Results for Douglas Adams (Q42): a summary of 62 references with 6 unreachable, the Unreachable filter selected, and two dead references, one with an archived copy from 19 Oct 2017 and one with no snapshot found"
+           width="1664" height="1801" loading="lazy">
+      <figcaption>
+        Results for Douglas Adams (Q42), filtered to unreachable references. The first dead link has an
+        archived copy you can use; for the second, no snapshot was found and you can search the Wayback Machine yourself.
+      </figcaption>
     </figure>
 
     <div class="callout">

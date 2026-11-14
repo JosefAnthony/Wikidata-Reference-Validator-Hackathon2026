@@ -31,11 +31,16 @@
         <i class="bi bi-x-lg" aria-hidden="true"></i>
       </button>
       <kbd class="search__kbd" aria-hidden="true">/</kbd>
+      <button type="button" class="search__mic" id="voiceBtn" aria-label="Search by voice" aria-pressed="false"
+              title="Search by voice" hidden>
+        <i class="bi bi-mic" aria-hidden="true"></i>
+      </button>
       <button type="submit" class="search__submit" id="validateBtn" aria-label="Validate references">
         <i class="bi bi-arrow-up" aria-hidden="true"></i>
       </button>
     </div>
     <ul id="suggestions" class="suggestions" role="listbox" aria-label="Matching Wikidata items" hidden></ul>
+    <p class="voice-status" id="voiceStatus" role="status" aria-live="polite" hidden></p>
   </form>
 
   <div class="hero__examples" aria-label="Example items">

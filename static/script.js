@@ -20,6 +20,16 @@ const state = {
 
 const QID_PATTERN = /^[Qq]\d+$/;
 
+// Shorter placeholder on small screens so it isn't cut off mid-word.
+const PLACEHOLDERS = { wide: els.input.placeholder, narrow: "Name or QID" };
+const phoneScreen = window.matchMedia("(max-width: 480px)");
+function applyPlaceholder() {
+  if (els.input.dataset.listening === "true") return;
+  els.input.placeholder = phoneScreen.matches ? PLACEHOLDERS.narrow : PLACEHOLDERS.wide;
+}
+applyPlaceholder();
+phoneScreen.addEventListener("change", applyPlaceholder);
+
 /**************************************
  * AUTOCOMPLETE
  **************************************/
@@ -226,6 +236,7 @@ function showNotice(kind, message, { retry } = {}) {
 }
 
 async function validate(qid, label, { updateHistory = true } = {}) {
+  tts.stop();
   showLoading(label || qid);
   const start = Date.now();
 
@@ -368,7 +379,7 @@ function renderReport() {
   els.result.innerHTML = `
     <div class="article-layout">
       <nav class="toc" aria-label="Contents">
-        <details class="toc__box" open>
+        <details class="toc__box" ${window.matchMedia("(max-width: 1000px)").matches ? "" : "open"}>
           <summary class="toc__title">Contents</summary>
           <ol class="toc__list">
             <li><a href="#overview">Overview</a></li>
@@ -409,6 +420,10 @@ function renderReport() {
             <button type="button" class="btn-ghost" data-action="share" title="Copy link to this result">
               <i class="bi bi-link-45deg"></i><span>Share</span>
             </button>
+            ${tts.supported ? `
+            <button type="button" class="btn-ghost btn-listen" data-action="listen" aria-pressed="false" title="Read these results aloud">
+              <i class="bi bi-volume-up"></i><span>Listen</span>
+            </button>` : ""}
           </div>
         </header>
         ${report.description ? `<p class="article__desc">${escapeHtml(report.description)}</p>` : ""}
@@ -484,7 +499,7 @@ function renderReference(ref) {
   const archive = ref.suggestedArchive;
 
   return `
-    <li class="ref ${isDead ? "ref--dead" : "ref--alive"}">
+    <li class="ref ${isDead ? "ref--dead" : "ref--alive"}" data-ref="${state.report.references.indexOf(ref)}">
       <span class="ref__status" title="${escapeHtml(statusLabel)}${http ? ` (${escapeHtml(http)})` : ""}">
         <i class="bi ${isDead ? "bi-x-circle-fill" : "bi-check-circle-fill"}" aria-hidden="true"></i>
         <span class="visually-hidden">${escapeHtml(statusLabel)}</span>
@@ -529,6 +544,7 @@ function renderReference(ref) {
 function renderSections() {
   const container = document.getElementById("sections");
   if (!container) return;
+  tts.stop(); // the elements being read are about to be replaced
 
   const groups = groupByProperty(state.report.references.filter(matchesFilters));
   const visible = new Set(groups.map(g => g.id));
@@ -573,6 +589,12 @@ function setStatusFilter(status) {
   renderSections();
 }
 
+/** Keep the contents list expanded on wide screens and collapsed on narrow ones, even after resizing/rotating. */
+const narrowScreen = window.matchMedia("(max-width: 1000px)");
+narrowScreen.addEventListener("change", e => {
+  const toc = els.result.querySelector(".toc__box");
+  if (toc) toc.open = !e.matches;
+});
 /** Highlight the table-of-contents entry for the section currently in view. */
 let sectionObserver = null;
 function observeSections() {
@@ -630,6 +652,9 @@ els.result.addEventListener("click", e => {
     case "share":
       copyText(window.location.href, "Link copied — share it to show this result");
       break;
+    case "listen":
+      tts.toggle();
+      break;
     case "clear-filters": {
       state.filters = { status: "all" };
       setStatusFilter("all");
@@ -663,9 +688,376 @@ function toast(message) {
 }
 
 /**************************************
+ * READ ALOUD (speech synthesis)
+ **************************************/
+const tts = (() => {
+  const supported = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+  const synth = supported ? window.speechSynthesis : null;
+  const RATES = [1, 1.25, 1.5, 0.75];
+
+  let queue = [];          // [{ text, el, label }]
+  let index = 0;
+  let playing = false;
+  let paused = false;
+  let token = 0;           // invalidates callbacks from cancelled utterances
+  let rate = 1;
+  let voice = null;
+  let current = null;      // keep a reference so Chrome doesn't garbage-collect it mid-sentence
+  let player = null;
+
+  function pickVoice() {
+    const voices = synth.getVoices();
+    const english = voices.filter(v => /^en([-_]|$)/i.test(v.lang));
+    return english.find(v => v.default) || english.find(v => v.localService) || english[0] || null;
+  }
+  if (supported) {
+    voice = pickVoice();
+    synth.addEventListener?.("voiceschanged", () => { voice = pickVoice(); });
+  }
+
+  function spokenDate(ts) {
+    if (!ts || ts.length < 8) return "";
+    const d = new Date(Date.UTC(+ts.slice(0, 4), +ts.slice(4, 6) - 1, +ts.slice(6, 8)));
+    return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  }
+
+  function describeRef(ref) {
+    const domain = ref.domain || displayUrl(ref.url).split("/")[0];
+    const value = ref.statementValue ? `, supporting "${ref.statementValue}"` : "";
+    if (ref.status !== "dead") return `Alive: ${domain}${value}.`;
+
+    const reason = ref.httpStatus ? `The server returned error ${ref.httpStatus}.` : "The server did not respond.";
+    const archive = ref.suggestedArchive
+      ? `An archived copy${spokenDate(ref.suggestedArchive.timestamp) ? ` from ${spokenDate(ref.suggestedArchive.timestamp)}` : ""} is available.`
+      : "No archived copy was found.";
+    return `Unreachable: ${domain}${value}. ${reason} ${archive}`;
+  }
+
+  /** Turn what is currently on screen (respecting filters) into short, speakable chunks. */
+  function buildQueue() {
+    const report = state.report;
+    if (!report) return [];
+    const items = [];
+    const lede = els.result.querySelector(".article__lede");
+    const ledeText = lede ? lede.textContent.replace(/\s+/g, " ").trim() : "";
+    items.push({ text: `Reference results for ${report.label}. ${ledeText}`, el: lede, label: "Summary" });
+
+    const { status, category, text } = state.filters;
+    const refs = report.references.filter(matchesFilters);
+    if (status !== "all" || category !== "all" || text) {
+      const parts = [];
+      if (status === "dead") parts.push("unreachable references");
+      else if (status === "alive") parts.push("alive references");
+      else if (status === "archived") parts.push("references with archived copies");
+      else parts.push("references");
+      if (category !== "all") parts.push(`from ${sourceCategoryMeta(category).label}`);
+      if (text) parts.push(`matching "${text}"`);
+      items.push({ text: `Showing ${refs.length} ${parts.join(" ")}.`, el: document.getElementById("overview"), label: "Filters" });
+    } else if (refs.filter(r => r.status === "alive").length > 5) {
+      items.push({
+        text: "Tip: to hear only broken links, stop reading, choose the Unreachable filter, then press Listen again.",
+        el: document.getElementById("overview"),
+        label: "Tip",
+      });
+    }
+
+    groupByProperty(refs).forEach(g => {
+      const n = g.refs.length;
+      items.push({
+        text: `${g.label}. ${n} reference${n === 1 ? "" : "s"}${g.dead ? `, ${g.dead} unreachable` : ""}.`,
+        el: document.getElementById(`sec-${g.id}`),
+        label: g.label,
+      });
+      [...g.refs]
+        .sort((a, b) => (a.status === "dead" ? 0 : 1) - (b.status === "dead" ? 0 : 1))
+        .forEach(ref => items.push({
+          text: describeRef(ref),
+          el: els.result.querySelector(`[data-ref="${report.references.indexOf(ref)}"]`),
+          label: `${g.label} · ${ref.domain || "reference"}`,
+        }));
+    });
+
+    items.push({ text: "End of results.", el: null, label: "End" });
+    return items;
+  }
+
+  /* ---------- Player UI ---------- */
+  function ensurePlayer() {
+    if (player) return player;
+    player = document.createElement("div");
+    player.className = "tts-player";
+    player.setAttribute("role", "region");
+    player.setAttribute("aria-label", "Read aloud controls");
+    player.hidden = true;
+    player.innerHTML = `
+      <span class="tts-player__wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <div class="tts-player__text">
+        <span class="tts-player__label">Reading aloud</span>
+        <span class="tts-player__now" data-tts="now"></span>
+      </div>
+      <span class="tts-player__progress" data-tts="progress"></span>
+      <div class="tts-player__controls">
+        <button type="button" class="tts-btn" data-tts="prev" aria-label="Previous item" title="Previous"><i class="bi bi-skip-backward-fill"></i></button>
+        <button type="button" class="tts-btn tts-btn--main" data-tts="play" aria-label="Pause" title="Pause"><i class="bi bi-pause-fill"></i></button>
+        <button type="button" class="tts-btn" data-tts="next" aria-label="Next item" title="Next"><i class="bi bi-skip-forward-fill"></i></button>
+        <button type="button" class="tts-btn tts-btn--rate" data-tts="rate" aria-label="Reading speed 1 times" title="Reading speed">1×</button>
+        <button type="button" class="tts-btn" data-tts="stop" aria-label="Stop reading" title="Stop"><i class="bi bi-x-lg"></i></button>
+      </div>`;
+    document.body.appendChild(player);
+
+    player.addEventListener("click", e => {
+      const action = e.target.closest("[data-tts]")?.dataset.tts;
+      if (action === "play") paused ? resume() : pause();
+      else if (action === "prev") jump(-1);
+      else if (action === "next") jump(1);
+      else if (action === "rate") cycleRate();
+      else if (action === "stop") stop();
+    });
+    return player;
+  }
+
+  function updatePlayer() {
+    if (!player) return;
+    const item = queue[index];
+    player.querySelector('[data-tts="now"]').textContent = item ? item.label : "";
+    player.querySelector('[data-tts="progress"]').textContent = queue.length ? `${Math.min(index + 1, queue.length)} / ${queue.length}` : "";
+    const play = player.querySelector('[data-tts="play"]');
+    play.innerHTML = `<i class="bi ${paused ? "bi-play-fill" : "bi-pause-fill"}"></i>`;
+    play.setAttribute("aria-label", paused ? "Resume" : "Pause");
+    play.title = paused ? "Resume" : "Pause";
+    player.classList.toggle("is-paused", paused);
+    const rateBtn = player.querySelector('[data-tts="rate"]');
+    rateBtn.textContent = `${rate}×`;
+    rateBtn.setAttribute("aria-label", `Reading speed ${rate} times`);
+  }
+
+  function setListenButton(on) {
+    const btn = els.result.querySelector('[data-action="listen"]');
+    if (!btn) return;
+    btn.setAttribute("aria-pressed", String(on));
+    btn.classList.toggle("is-active", on);
+    btn.innerHTML = on
+      ? `<i class="bi bi-stop-fill"></i><span>Stop</span>`
+      : `<i class="bi bi-volume-up"></i><span>Listen</span>`;
+  }
+
+  function clearHighlight() {
+    els.result.querySelectorAll(".is-speaking").forEach(el => el.classList.remove("is-speaking"));
+  }
+
+  function highlight(item) {
+    clearHighlight();
+    if (!item?.el) return;
+    item.el.classList.add("is-speaking");
+    const r = item.el.getBoundingClientRect();
+    if (r.top < 80 || r.bottom > window.innerHeight - 110) {
+      item.el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
+  /* ---------- Playback ---------- */
+  function speakCurrent() {
+    const my = ++token;
+    synth.cancel();
+    const item = queue[index];
+    if (!item) return stop();
+    paused = false;
+    highlight(item);
+    updatePlayer();
+
+    const u = new SpeechSynthesisUtterance(item.text);
+    u.lang = voice?.lang || "en-US";
+    if (voice) u.voice = voice;
+    u.rate = rate;
+    u.onend = () => {
+      if (my !== token) return;
+      index++;
+      if (index >= queue.length) stop();
+      else speakCurrent();
+    };
+    u.onerror = e => {
+      if (my !== token || e.error === "interrupted" || e.error === "canceled") return;
+      toast("Reading aloud isn't available right now.");
+      stop();
+    };
+    current = u;
+    // A short delay after cancel() avoids Chrome silently dropping the next utterance.
+    setTimeout(() => { if (my === token) synth.speak(u); }, 60);
+  }
+
+  function start() {
+    queue = buildQueue();
+    if (!queue.length) return;
+    index = 0;
+    playing = true;
+    ensurePlayer().hidden = false;
+    document.body.classList.add("tts-active");
+    setListenButton(true);
+    speakCurrent();
+  }
+
+  function pause() {
+    token++;            // ignore the end event caused by cancel()
+    synth.cancel();     // cancel + re-speak is more reliable across browsers than pause()/resume()
+    paused = true;
+    updatePlayer();
+  }
+
+  function resume() {
+    speakCurrent();     // restarts the current item from its beginning
+  }
+
+  function jump(delta) {
+    index = Math.max(0, Math.min(queue.length - 1, index + delta));
+    speakCurrent();
+  }
+
+  function cycleRate() {
+    rate = RATES[(RATES.indexOf(rate) + 1) % RATES.length];
+    if (paused) updatePlayer();
+    else speakCurrent();
+  }
+
+  function stop() {
+    if (!supported) return;
+    token++;
+    if (playing || synth.speaking || synth.pending) synth.cancel();
+    playing = false;
+    paused = false;
+    current = null;
+    clearHighlight();
+    if (player) player.hidden = true;
+    document.body.classList.remove("tts-active");
+    setListenButton(false);
+  }
+
+  if (supported) {
+    window.addEventListener("pagehide", stop);
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && playing) stop();
+    });
+  }
+
+  return {
+    supported,
+    toggle: () => (playing ? stop() : start()),
+    stop,
+  };
+})();
+
+/**************************************
+ * VOICE SEARCH (Web Speech API)
+ **************************************/
+(function initVoiceSearch() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = document.getElementById("voiceBtn");
+  const status = document.getElementById("voiceStatus");
+  if (!SpeechRecognition || !btn) return; // unsupported browser: keep the mic hidden
+
+  btn.hidden = false;
+  const recognition = new SpeechRecognition();
+  recognition.lang = document.documentElement.lang || "en";
+  recognition.interimResults = true;
+  recognition.continuous = false;
+  recognition.maxAlternatives = 1;
+
+  let listening = false;
+  let finalText = "";
+
+  function setStatus(text) {
+    status.textContent = text || "";
+    status.hidden = !text;
+  }
+
+  function setListening(on) {
+    listening = on;
+    btn.classList.toggle("is-listening", on);
+    btn.setAttribute("aria-pressed", String(on));
+    btn.setAttribute("aria-label", on ? "Stop voice search" : "Search by voice");
+    btn.querySelector("i").className = `bi ${on ? "bi-mic-fill" : "bi-mic"}`;
+    els.input.dataset.listening = String(on);
+    if (on) els.input.placeholder = phoneScreen.matches ? "Listening…" : "Listening… say an item name or QID";
+    else applyPlaceholder();
+  }
+
+  /** "q 42" / "Q forty two" style transcripts -> "Q42" when it looks like a QID. */
+  function asQid(text) {
+    const compact = text.replace(/[\s.\-]/g, "");
+    return QID_PATTERN.test(compact) ? compact.toUpperCase() : null;
+  }
+
+  btn.addEventListener("click", () => {
+    if (listening) {
+      recognition.stop();
+      return;
+    }
+    finalText = "";
+    closeSuggestions();
+    try {
+      recognition.start();
+    } catch {
+      /* start() throws if already running; ignore */
+    }
+  });
+
+  recognition.addEventListener("start", () => {
+    setListening(true);
+    setStatus("Listening…");
+  });
+
+  recognition.addEventListener("result", e => {
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const transcript = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalText += transcript;
+      else interim += transcript;
+    }
+    const shown = (finalText + interim).trim();
+    els.input.value = shown;
+    els.clear.hidden = !shown;
+    state.selected = null;
+  });
+
+  recognition.addEventListener("error", e => {
+    const messages = {
+      "not-allowed": "Microphone access was blocked. Allow it in your browser settings to search by voice.",
+      "service-not-allowed": "Voice search isn't available in this browser.",
+      "no-speech": "Didn't catch that. Tap the mic and try again.",
+      "audio-capture": "No microphone was found.",
+      "network": "Voice search needs an internet connection.",
+    };
+    if (e.error !== "aborted") toast(messages[e.error] || "Voice search stopped unexpectedly.");
+  });
+
+  recognition.addEventListener("end", () => {
+    setListening(false);
+    setStatus("");
+    const text = finalText.trim();
+    if (!text) return;
+
+    const qid = asQid(text);
+    if (qid) {
+      els.input.value = qid;
+      validate(qid, qid);
+      return;
+    }
+    // Show matching items so the user can confirm which one they meant.
+    els.input.value = text;
+    els.input.focus();
+    els.input.dispatchEvent(new Event("input"));
+  });
+
+  // Esc stops listening.
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && listening) recognition.abort();
+  });
+})();
+
+/**************************************
  * RESET, HISTORY & DEEP LINKS
  **************************************/
 function resetSearch({ updateHistory = true } = {}) {
+  tts.stop();
   clearInterval(elapsedTimer);
   state.report = null;
   state.selected = null;
