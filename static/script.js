@@ -1,10 +1,14 @@
 /**************************************
- * AUTOCOMPLETE SEARCH (UNCHANGED FLOW)
+ * AUTOCOMPLETE SEARCH (FIXED FOR STALE QID)
  **************************************/
 document.getElementById("search").addEventListener("input", async function () {
   const query = this.value;
   const suggestions = document.getElementById("suggestions");
   suggestions.innerHTML = "";
+
+  // CORRECTION TICKET : On efface l'ancien QID et label dès que l'utilisateur modifie le texte
+  this.removeAttribute("data-qid");
+  this.removeAttribute("data-label");
 
   if (query.length < 3) return;
 
@@ -71,14 +75,17 @@ async function validate() {
   const resultDiv = document.getElementById("result");
   const searchSection = document.getElementById("searchSection");
 
-  // if (!qid && !label) {
-  //   resultDiv.innerHTML = `
-  //     <div class="alert alert-warning">
-  //       <i class="bi bi-exclamation-triangle"></i>
-  //       Please type a label or select an item first.
-  //     </div>`;
-  //   return;
-  // }
+  // CORRECTION TICKET : On exige un QID valide issu de l'autocomplétion
+  if (!qid) {
+    resultDiv.innerHTML = `
+      <div class="card p-4 text-center">
+        <div class="alert alert-warning">
+          <i class="bi bi-exclamation-triangle"></i>
+          <strong>Valid item required:</strong> Please select a valid Wikidata item from the autocomplete suggestions before validating.
+        </div>
+      </div>`;
+    return;
+  }
 
   searchSection.style.display = "none";
 
