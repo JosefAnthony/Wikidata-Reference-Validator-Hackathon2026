@@ -158,9 +158,6 @@ async function resolveQidFromLabel(label) {
  **************************************/
 async function validate() {
   const input = searchInput;
-  const resultDiv = document.getElementById("result");
-  const searchSection = document.getElementById("searchSection");
-
   const typedValue = input.value.trim();
   const selectedLabel = (input.getAttribute("data-label") || "").trim();
   let label = selectedLabel || typedValue;
@@ -197,6 +194,36 @@ async function validate() {
   }
 
   clearSearchError();
+  await runValidation(qid, label);
+}
+
+/**************************************
+ * VALIDATE AGAIN (CURRENT ITEM)
+ **************************************/
+async function validateAgain() {
+  const qid = (searchInput.getAttribute("data-qid") || "").trim().toUpperCase();
+  const label =
+    (searchInput.getAttribute("data-label") || "").trim() ||
+    searchInput.value.trim() ||
+    qid;
+
+  if (!QID_PATTERN.test(qid)) {
+    document.getElementById("searchSection").style.display = "block";
+    showSearchError("Please select a Wikidata item before validating again.");
+    return;
+  }
+
+  clearSearchError();
+  await runValidation(qid, label);
+}
+
+/**************************************
+ * RUN VALIDATION
+ **************************************/
+async function runValidation(qid, label) {
+  const resultDiv = document.getElementById("result");
+  const searchSection = document.getElementById("searchSection");
+
   searchSection.style.display = "none";
 
   let remaining = 30;
@@ -252,8 +279,12 @@ async function validate() {
             <i class="bi bi-info-circle"></i> ${data.message}
           </div>
           <p class="small text-muted">Completed in ${duration}s</p>
-          <button class="btn btn-lg btn-glass-action mt-3"
-                  onclick="resetSearch()">🔄 Search Another Item</button>
+          <div class="d-flex justify-content-center gap-2 flex-wrap mt-3">
+            <button class="btn btn-lg btn-glass-action"
+                    onclick="validateAgain()">🔁 Validate Again</button>
+            <button class="btn btn-lg btn-glass-action"
+                    onclick="resetSearch()">🔄 Search Another Item</button>
+          </div>
         </div>`;
       return;
     }
@@ -377,7 +408,9 @@ async function validate() {
     html += `
         </ul>
         <p class="small text-muted mt-2">Completed in ${duration}s</p>
-        <div class="text-center mt-3">
+        <div class="text-center mt-3 d-flex justify-content-center gap-2 flex-wrap">
+          <button class="btn btn-lg btn-glass-action"
+                  onclick="validateAgain()">🔁 Validate Again</button>
           <button class="btn btn-lg btn-glass-action"
                   onclick="resetSearch()">🔄 Search Another Item</button>
         </div>
