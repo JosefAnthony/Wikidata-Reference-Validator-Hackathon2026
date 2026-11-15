@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify, render_template
 import requests
 import aiohttp
 import asyncio
+import time
+from threading import Lock
 
 app = Flask(__name__)
 
@@ -13,6 +15,48 @@ HEADERS = {
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
                   "Chrome/115.0.0.0 Safari/537.36"
 }
+# ---------------------------------------------------
+# CACHE (TTL + size limit)
+# ---------------------------------------------------
+
+MISS = object()  # returned when nothing valid is stored
+
+
+class TTLCache:
+    """Small in-memory cache. Entries expire after ttl_seconds,
+    and the cache never holds more than max_entries items."""
+
+    def __init__(self, ttl_seconds, max_entries=500):
+        self.ttl = ttl_seconds
+        self.max_entries = max_entries
+        self.data = {}  # key -> (value, expiry_time)
+        self.lock = Lock()
+
+    def get(self, key):
+        with self.lock:
+            item = self.data.get(key)
+            if item is None:
+                return MISS
+            value, expires_at = item
+            if expires_at <= time.time():
+                del self.data[key]  # expired, remove it
+                return MISS
+            return value
+
+    def set(self, key, value):
+        with self.lock:
+            self.data.pop(key, None)  # re-adding makes it the newest entry
+            while len(self.data) >= self.max_entries:
+                oldest_key = next(iter(self.data))
+                del self.data[oldest_key]
+            self.data[key] = (value, time.time() + self.ttl)
+
+
+# One cache per kind of data (times are in seconds)
+SEARCH_CACHE = TTLCache(ttl_seconds=10 * 60)       # autocomplete: 10 minutes
+LABEL_CACHE = TTLCache(ttl_seconds=24 * 60 * 60)   # labels: 24 hours
+WAYBACK_CACHE = TTLCache(ttl_seconds=60 * 60)      # Wayback: 1 hour
+
 
 
 # ---------------------------------------------------
