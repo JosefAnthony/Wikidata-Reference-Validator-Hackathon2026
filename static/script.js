@@ -580,11 +580,12 @@ function renderReference(ref) {
   const meta = sourceCategoryMeta(ref.sourceCategory);
   const statusLabel = isDead ? "Unreachable" : ref.status === "alive" ? "Alive" : ref.status;
   const http = ref.httpStatus ? `HTTP ${ref.httpStatus}` : isDead ? "No response" : "";
+  const error = ref.error ? `${ref.httpStatus ? " - " : ""}${ref.error}` : "";
   const archive = ref.suggestedArchive;
 
   return `
     <li class="ref ${isDead ? "ref--dead" : "ref--alive"}" data-ref="${state.report.references.indexOf(ref)}">
-      <span class="ref__status" title="${escapeHtml(statusLabel)}${http ? ` (${escapeHtml(http)})` : ""}">
+      <span class="ref__status" title="${escapeHtml(statusLabel)}${http ? ` (${escapeHtml(http)})` : ""}${error ? ` - ${escapeHtml(error)}` : ""}">
         <i class="bi ${isDead ? "bi-x-circle-fill" : "bi-check-circle-fill"}" aria-hidden="true"></i>
         <span class="visually-hidden">${escapeHtml(statusLabel)}</span>
       </span>
@@ -596,6 +597,7 @@ function renderReference(ref) {
           <span class="tag"><i class="bi ${meta.icon}"></i> ${meta.label}</span>
           ${ref.statementValue ? `<span class="ref__value" title="Statement value">${escapeHtml(ref.statementValue)}</span>` : ""}
           ${http ? `<span class="ref__http ${isDead ? "text-dead" : ""}">${escapeHtml(http)}</span>` : ""}
+          ${error ? `<span class="ref__error text-dead">${escapeHtml(error)}</span>` : ""}
         </div>
 
         ${isDead ? `
