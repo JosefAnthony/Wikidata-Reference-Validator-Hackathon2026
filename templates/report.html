@@ -146,6 +146,28 @@
       }
     });
 
+    // Listen for copy button click
+
+       document.addEventListener('click', async (event) => {
+        const btn = event.target.closest('#copyLinkBtn');
+        if (!btn) return;
+        const orginalText = btn.textContent;
+
+        try {
+          await navigator.clipboard.writeText(btn.dataset.url);
+          btn.textContent = 'Copied!';
+        } catch (err) {
+          console.error('Copy failed: ', err);
+          btn.textContent = 'Copy failed';
+        }
+
+        setTimeout(() => {
+          btn.textContent = orginalText;
+        }, 2000);
+
+      });
+
+
     // Accordion for references
     const accordion = document.getElementById("refAccordion");
     report.references.forEach((ref, i) => {
@@ -163,6 +185,13 @@
             <span class="ms-2">
               ${ref.status === "alive" ? "✅ Alive" : "❌ Dead"}
             </span>
+            <span id="copyLinkBtn" class="btn btn-sm btn-outline-secondary ms-2"
+              data-bs-toggle="collapse"
+              data-bs-target="#${ref.url}"
+              data-url="${ref.url}">
+              Copy Link
+            </span> 
+
           </button>
         </h2>
         <div id="collapse${i}" class="accordion-collapse collapse"

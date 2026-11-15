@@ -189,6 +189,8 @@ async function validate() {
       const icon = ref.status === "alive" ? "check-circle" : "x-octagon";
       const collapseId = `collapseRef${i}`;
 
+// Add event listener for copy button click      
+
       document.addEventListener('click', async (event) => {
         const btn = event.target.closest('#copyLinkBtn');
         if (!btn) return;
