@@ -15,6 +15,8 @@ HEADERS = {
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
                   "Chrome/115.0.0.0 Safari/537.36"
 }
+
+
 # ---------------------------------------------------
 # CACHE (TTL + size limit)
 # ---------------------------------------------------
@@ -58,7 +60,6 @@ LABEL_CACHE = TTLCache(ttl_seconds=24 * 60 * 60)   # labels: 24 hours
 WAYBACK_CACHE = TTLCache(ttl_seconds=60 * 60)      # Wayback: 1 hour
 
 
-
 # ---------------------------------------------------
 # ROUTES
 # ---------------------------------------------------
@@ -70,6 +71,7 @@ def home():
 @app.route("/about")
 def about():
     return render_template("about.html")
+
 
 @app.route("/use")
 def use():
@@ -144,7 +146,7 @@ async def check_url(session, url):
 
 
 # ---------------------------------------------------
-# WAYBACK MACHINE HELPER  ✅ FIXED
+# WAYBACK MACHINE HELPER
 # ---------------------------------------------------
 
 def fetch_wayback_snapshot(url, refresh=False):
@@ -191,13 +193,24 @@ def fetch_wayback_snapshot(url, refresh=False):
 # LABEL FETCHING
 # ---------------------------------------------------
 
-def fetch_labels(ids):
+def fetch_labels(ids, refresh=False):
     labels = {}
     if not ids:
         return labels
 
-    id_list = list(ids)
-    chunks = [id_list[i:i + 50] for i in range(0, len(id_list), 50)]
+    # Use saved labels where possible, and only fetch the missing ones
+    missing = []
+    for eid in ids:
+        if not refresh:
+            cached = LABEL_CACHE.get(eid)
+            if cached is not MISS:
+                labels[eid] = cached
+                continue
+        missing.append(eid)
+
+    print(f"[CACHE] labels: {len(labels)} hit, {len(missing)} to fetch (refresh={refresh})")
+
+    chunks = [missing[i:i + 50] for i in range(0, len(missing), 50)]
 
     for chunk in chunks:
         params = {
@@ -217,6 +230,7 @@ def fetch_labels(ids):
                 label = data.get("labels", {}).get("en", {}).get("value")
                 if label:
                     labels[eid] = label
+                    LABEL_CACHE.set(eid, label)
 
         except Exception as e:
             print(f"[Label fetch failed] {chunk}: {e}")
@@ -225,7 +239,7 @@ def fetch_labels(ids):
 
 
 # ---------------------------------------------------
-# VALIDATE REFERENCES  ✅ CORRECT ROUTE
+# VALIDATE REFERENCES
 # ---------------------------------------------------
 
 @app.route("/validate", methods=["POST"])
@@ -295,7 +309,7 @@ def validate_references():
                 return await asyncio.gather(*tasks)
 
         url_statuses = asyncio.run(run_checks())
-        labels = fetch_labels(all_ids_to_label)
+        labels = fetch_labels(all_ids_to_label, refresh)
 
         results = []
         for ref_data, status_data in zip(refs_data, url_statuses):
