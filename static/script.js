@@ -151,6 +151,8 @@ function selectSuggestion(index) {
   if (!item) return;
   state.selected = { qid: item.id, label: item.label };
   els.input.value = item.label;
+  els.input.setAttribute("data-qid", item.id);
+  els.input.setAttribute("data-label", item.label);
   closeSuggestions();
   validate(item.id, item.label);
 }
@@ -158,6 +160,8 @@ function selectSuggestion(index) {
 els.input.addEventListener("input", () => {
   const query = els.input.value.trim();
   state.selected = null;
+  els.input.removeAttribute("data-qid");
+  els.input.removeAttribute("data-label");
   els.clear.hidden = !els.input.value;
 
   if (query.length < 2) {
@@ -201,6 +205,8 @@ document.addEventListener("click", e => {
 
 els.clear.addEventListener("click", () => {
   els.input.value = "";
+  els.input.removeAttribute("data-qid");
+  els.input.removeAttribute("data-label");
   els.clear.hidden = true;
   state.selected = null;
   closeSuggestions();
@@ -216,14 +222,15 @@ els.form.addEventListener("submit", e => {
     setTimeout(() => els.form.classList.remove("is-invalid"), 600);
     return;
   }
-  closeSuggestions();
-  if (state.selected) {
-    validate(state.selected.qid, state.selected.label);
-  } else if (QID_PATTERN.test(typed)) {
-    validate(typed.toUpperCase(), typed.toUpperCase());
-  } else {
-    validate(null, typed);
+
+  if (!state.selected) {
+    showNotice("error", "Please select a Wikidata item from the autocomplete suggestions before validating.");
+    els.input.focus();
+    return;
   }
+
+  closeSuggestions();
+  validate(state.selected.qid, state.selected.label);
 });
 
 els.language?.addEventListener("change", () => {
@@ -1156,6 +1163,8 @@ function resetSearch({ updateHistory = true } = {}) {
   state.selected = null;
   els.result.innerHTML = "";
   els.input.value = "";
+  els.input.removeAttribute("data-qid");
+  els.input.removeAttribute("data-label");
   els.clear.hidden = true;
   document.body.classList.remove("has-results");
   document.title = "Wikidata Reference Validator";
