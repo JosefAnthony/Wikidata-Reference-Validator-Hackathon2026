@@ -1,0 +1,13 @@
+<script>
+  // Messages for the current language, sent from Python (i18n.py)
+  window.WRV_MESSAGES = {{ all_messages() | tojson }};
+
+  // JavaScript version of msg(): wrvMsg("wrv-alive-count", 6) -> "Alive: 6"
+  function wrvMsg(key, ...params) {
+    let text = window.WRV_MESSAGES[key] || "⧼" + key + "⧽";
+    params.forEach((value, i) => {
+      text = text.split("$" + (i + 1)).join(value);
+    });
+    return text;
+  }
+</script>

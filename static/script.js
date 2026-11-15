@@ -61,9 +61,7 @@ async function getPropertyLabel(pid) {
   }
 }
 
-/**************************************
- * VALIDATE REFERENCES (FIXED + SAFE)
- **************************************/
+/*VALIDATE REFERENCES (FIXED + SAFE)*/
 async function validate() {
   const input = document.getElementById("search");
   const qid = input.getAttribute("data-qid");
@@ -88,7 +86,7 @@ async function validate() {
       <div class="fancy-loader"></div>
       <p class="mt-3 text-light fw-bold">...</p>
       <p id="countdownTimer" class="text-info small">
-        Estimated time: ${remaining}s
+        ${wrvMsg("wrv-loading-estimated-time", remaining)}
       </p>
     </div>
   `;
@@ -98,7 +96,9 @@ async function validate() {
     const el = document.getElementById("countdownTimer");
     if (el) {
       el.textContent =
-        remaining > 0 ? `Estimated time: ${remaining}s` : "Finalizing...";
+        remaining > 0
+          ? wrvMsg("wrv-loading-estimated-time", remaining)
+          : wrvMsg("wrv-loading-finalizing");
     }
   }, 1000);
 
@@ -121,9 +121,9 @@ async function validate() {
           <div class="alert alert-danger">
             <i class="bi bi-x-circle"></i> ${data.error}
           </div>
-          <p class="small text-muted">Completed in ${duration}s</p>
+          <p class="small text-muted">${wrvMsg("wrv-completed-in", duration)}</p>
           <button class="btn btn-lg btn-glass-action mt-3"
-                  onclick="resetSearch()">🔄 Search Another Item</button>
+                  onclick="resetSearch()">🔄 ${wrvMsg("wrv-search-another")}</button>
         </div>`;
       return;
     }
@@ -134,9 +134,9 @@ async function validate() {
           <div class="alert alert-info">
             <i class="bi bi-info-circle"></i> ${data.message}
           </div>
-          <p class="small text-muted">Completed in ${duration}s</p>
+          <p class="small text-muted">${wrvMsg("wrv-completed-in", duration)}</p>
           <button class="btn btn-lg btn-glass-action mt-3"
-                  onclick="resetSearch()">🔄 Search Another Item</button>
+                  onclick="resetSearch()">🔄 ${wrvMsg("wrv-search-another")}</button>
         </div>`;
       return;
     }
@@ -158,26 +158,26 @@ async function validate() {
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div class="d-flex gap-2">
             <button id="viewReportBtn" class="btn btn-info btn-sm">
-              📊 View Report
+              📊 ${wrvMsg("wrv-view-report")}
             </button>
             <a href="https://www.wikidata.org/wiki/${qid}"
                target="_blank"
                class="btn btn-glass-warning btn-sm">
-              ✏️ Edit Item
+              ✏️ ${wrvMsg("wrv-edit-item")}
             </a>
           </div>
           <h3 class="mb-0 text-light">
             <i class="bi bi-list-check"></i>
-            Results for ${label} (${qid})
+            ${wrvMsg("wrv-results-for", label, qid)}
           </h3>
         </div>
 
         <p>
           <span class="badge bg-success">
-            <i class="bi bi-check-circle"></i> Alive: ${aliveCount}
+            <i class="bi bi-check-circle"></i> ${wrvMsg("wrv-alive-count", aliveCount)}
           </span>
           <span class="badge bg-danger ms-2">
-            <i class="bi bi-x-octagon"></i> Dead: ${deadCount}
+            <i class="bi bi-x-octagon"></i> ${wrvMsg("wrv-dead-count", deadCount)}
           </span>
         </p>
 
@@ -188,6 +188,9 @@ async function validate() {
       const badge = ref.status === "alive" ? "success" : "danger";
       const icon = ref.status === "alive" ? "check-circle" : "x-octagon";
       const collapseId = `collapseRef${i}`;
+      const statusText = ref.status === "alive"
+        ? wrvMsg("wrv-status-alive")
+        : wrvMsg("wrv-status-dead");
 
       html += `
         <li class="list-group-item p-3 rounded shadow-sm mb-2">
@@ -197,19 +200,19 @@ async function validate() {
             </a>
             <div class="d-flex align-items-center gap-2">
               <span class="badge bg-${badge}">
-                <i class="bi bi-${icon} me-1"></i> ${ref.status}
+                <i class="bi bi-${icon} me-1"></i> ${statusText}
               </span>
               <button class="btn btn-sm btn-outline-secondary"
                       data-bs-toggle="collapse"
                       data-bs-target="#${collapseId}">
-                Details
+                ${wrvMsg("wrv-details-button")}
               </button>
             </div>
           </div>
 
           <div class="collapse mt-2" id="${collapseId}">
             <div class="p-2 border rounded bg-light">
-              <div class="fw-bold">Statement:</div>
+              <div class="fw-bold">${wrvMsg("wrv-statement-label")}</div>
               <div>
                 <strong>${ref.propertyLabel}</strong>
                 ${ref.statementValue ? `: <em>${ref.statementValue}</em>` : ""}
@@ -220,8 +223,8 @@ async function validate() {
                   ? `
                     <div class="mt-2 alert alert-warning p-2 mb-1">
                       <i class="bi bi-exclamation-triangle me-1"></i>
-                      <strong>Reference unavailable.</strong>
-                      Please review or update this reference.
+                      <strong>${wrvMsg("wrv-reference-unavailable")}</strong>
+                      ${wrvMsg("wrv-review-reference")}
                     </div>
                   `
                   : ""
@@ -231,11 +234,11 @@ async function validate() {
                 ref.status === "dead" && ref.suggestedArchive
                   ? `
                     <div class="mt-2 small">
-                      🔁 <strong>Suggested archived version:</strong>
+                      🔁 <strong>${wrvMsg("wrv-suggested-archive")}</strong>
                       <a href="${ref.suggestedArchive.archiveUrl}"
                          target="_blank"
                          class="fw-semibold link-primary">
-                        View on Wayback Machine
+                        ${wrvMsg("wrv-view-wayback")}
                       </a>
                     </div>
                   `
@@ -246,7 +249,7 @@ async function validate() {
                 ref.status === "dead" && !ref.suggestedArchive
                   ? `
                     <div class="mt-2 small text-muted">
-                      📭 No archived snapshot found on Wayback Machine.
+                      📭 ${wrvMsg("wrv-no-archive")}
                     </div>
                   `
                   : ""
@@ -259,10 +262,10 @@ async function validate() {
 
     html += `
         </ul>
-        <p class="small text-muted mt-2">Completed in ${duration}s</p>
+        <p class="small text-muted mt-2">${wrvMsg("wrv-completed-in", duration)}</p>
         <div class="text-center mt-3">
           <button class="btn btn-lg btn-glass-action"
-                  onclick="resetSearch()">🔄 Search Another Item</button>
+                  onclick="resetSearch()">🔄 ${wrvMsg("wrv-search-another")}</button>
         </div>
       </div>
     `;
@@ -278,10 +281,10 @@ async function validate() {
     resultDiv.innerHTML = `
       <div class="card p-4 text-center">
         <div class="alert alert-danger">
-          <i class="bi bi-bug"></i> Error: ${err}
+          <i class="bi bi-bug"></i> ${wrvMsg("wrv-error", err)}
         </div>
         <button class="btn btn-lg btn-glass-action mt-3"
-                onclick="resetSearch()">🔄 Search Another Item</button>
+                onclick="resetSearch()">🔄 ${wrvMsg("wrv-search-another")}</button>
       </div>`;
   }
 }
@@ -293,14 +296,14 @@ document.addEventListener("shown.bs.collapse", e => {
   const btn = document.querySelector(
     `[data-bs-target="#${e.target.id}"]`
   );
-  if (btn) btn.textContent = "Hide";
+  if (btn) btn.textContent = wrvMsg("wrv-hide-button");
 });
 
 document.addEventListener("hidden.bs.collapse", e => {
   const btn = document.querySelector(
     `[data-bs-target="#${e.target.id}"]`
   );
-  if (btn) btn.textContent = "Details";
+  if (btn) btn.textContent = wrvMsg("wrv-details-button");
 });
 
 /**************************************

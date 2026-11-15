@@ -61,6 +61,15 @@ def msg(key, *params):
         text = text.replace(f"${number}", str(value))
     return text
 
+def all_messages():
+    """
+    All messages for the current language, with English filling any gaps.
+    Used to send the messages to JavaScript.
+    """
+    lang = g.get("lang", DEFAULT_LANG)
+    merged = dict(_messages.get(DEFAULT_LANG, {}))
+    merged.update(_messages.get(lang, {}))
+    return merged
 
 def init_app(app):
     """Connect the helper to the Flask app."""
@@ -80,4 +89,8 @@ def init_app(app):
     @app.context_processor
     def add_to_templates():
         # Makes {{ msg('key') }} and {{ lang }} work in every template
-        return {"msg": msg, "lang": g.get("lang", DEFAULT_LANG)}
+        return {
+            "msg": msg,
+            "lang": g.get("lang", DEFAULT_LANG),
+            "all_messages": all_messages,
+        }

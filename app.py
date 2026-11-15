@@ -163,7 +163,7 @@ def fetch_labels(ids):
 def validate_references():
     data = request.get_json(force=True)
     if not data or "qid" not in data:
-        return jsonify({"error": "Missing QID"}), 400
+        return jsonify({"error": i18n.msg("wrv-api-error-missing-qid")}), 400
 
     qid = data["qid"].strip()
 
@@ -214,7 +214,7 @@ def validate_references():
                                     all_ids_to_label.add(statement_value)
 
         if not refs_data:
-            return jsonify({"message": "No references found"}), 200
+            return jsonify({"message": i18n.msg("wrv-api-no-references")}), 200
 
         async def run_checks():
             async with aiohttp.ClientSession(headers=HEADERS) as session:
