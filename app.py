@@ -107,8 +107,14 @@ def search():
         "format": "json"
     }
 
-    r = requests.get(WIKIDATA_API, params=params)
-    data = r.json()
+    try:
+        r = requests.get(WIKIDATA_API, params=params, headers=HEADERS, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        # Do not cache a failed request, and do not crash the page
+        print(f"[Search failed] {query}: {e}")
+        return jsonify([])
 
     results = []
     for item in data.get("search", []):
@@ -118,8 +124,7 @@ def search():
             "description": item.get("description", "")
         })
 
-    if r.ok:  # never cache a failed request
-        SEARCH_CACHE.set(cache_key, results)
+    SEARCH_CACHE.set(cache_key, results)
 
     return jsonify(results)
 

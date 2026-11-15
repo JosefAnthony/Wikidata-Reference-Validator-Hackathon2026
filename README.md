@@ -1,4 +1,47 @@
 # 🌍 Wikidata Reference Validator (Hackathon Edition)
+## ⚡ Caching
+
+To reduce repeated requests to Wikidata and the Wayback Machine, the app keeps recent results in a lightweight in-memory cache.
+
+### What is cached
+
+| Data | Used by | Expires after |
+|---|---|---|
+| Wikidata autocomplete search results | `/search` | 10 minutes |
+| Wikidata item and property labels | `/validate` | 24 hours |
+| Wayback Machine snapshot results | `/validate` (dead references only) | 1 hour |
+
+URL status checks (alive or dead) are **not** cached, so link status is always checked live.
+
+### How it works
+
+* If the same request is made again before its entry expires, the saved result is returned and no outside request is sent.
+* Expired entries are refreshed automatically the next time they are requested.
+* Each cache holds at most **500 entries**. When a cache is full, the oldest entry is removed to make room.
+* Failed requests are never cached, so they are retried next time.
+* A Wayback result of "no snapshot found" is cached like any other result.
+* The cache lives in memory, so it is cleared whenever the app restarts.
+* The terminal prints `[CACHE HIT]` or `[CACHE MISS]` lines, which makes the behaviour easy to follow.
+
+### Bypassing the cache
+
+Add `?refresh=1` to a request to skip the cache and fetch fresh data. The fresh result then replaces the saved one.
+
+* Search: `http://127.0.0.1:5000/search?q=Douglas&refresh=1`
+* Validation: send a `POST` to `/validate?refresh=1`
+
+### Changing the settings
+
+The expiry times and size limit are set near the top of `app.py`:
+
+```python
+SEARCH_CACHE = TTLCache(ttl_seconds=10 * 60)
+LABEL_CACHE = TTLCache(ttl_seconds=24 * 60 * 60)
+WAYBACK_CACHE = TTLCache(ttl_seconds=60 * 60)
+```
+
+The default limit is 500 entries per cache (`max_entries=500`).
+
 
 This tool checks the external reference URLs on a Wikidata item (QID) to determine if they're still alive or dead — helping maintain the integrity and quality of Wikidata statements.
 
