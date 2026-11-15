@@ -17,6 +17,25 @@
         <li class="nav-item">
           <a class="nav-link {% if request.endpoint == 'use' %}active{% endif %}" href="{{ url_for('use') }}">📖 {{ msg('wrv-nav-howto') }}</a>
         </li>
+
+        <!-- Language switcher -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button"
+             data-bs-toggle="dropdown" aria-expanded="false"
+             aria-label="{{ msg('wrv-language-label') }}">
+            <i class="bi bi-translate"></i> {{ lang | upper }}
+          </a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li>
+              <a class="dropdown-item {% if lang == 'en' %}active{% endif %}"
+                 href="{{ url_for(request.endpoint, uselang='en') }}" lang="en">English</a>
+            </li>
+            <li>
+              <a class="dropdown-item {% if lang == 'sw' %}active{% endif %}"
+                 href="{{ url_for(request.endpoint, uselang='sw') }}" lang="sw">Kiswahili</a>
+            </li>
+          </ul>
+        </li>
       </ul>
     </div>
   </div>
