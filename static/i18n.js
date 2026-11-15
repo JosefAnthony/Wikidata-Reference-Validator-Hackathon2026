@@ -37,7 +37,7 @@ function applyTranslations() {
   document.dispatchEvent(new CustomEvent("i18n:applied"));
 }
 
-async function setLanguage(lang) {
+async function setUiLanguage(lang) {
   try {
     I18N.strings = lang === "en" ? I18N.fallback : await loadLang(lang);
     I18N.lang = lang;
@@ -56,5 +56,5 @@ const i18nReady = (async () => {
   I18N.fallback = await loadLang("en");
   let saved = "en";
   try { saved = localStorage.getItem("lang") || "en"; } catch {}
-  await setLanguage(saved);
+  await setUiLanguage(saved);
 })();
