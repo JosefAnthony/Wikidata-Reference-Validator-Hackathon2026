@@ -720,6 +720,7 @@ def validate_references():
                 "sourceCategory": source_category,
                 "status": status_info["status"],
                 "httpStatus": status_info.get("httpStatus"),
+                "error": status_info.get("error"),
                 "propertyId": prop_id,
                 "propertyLabel": labels.get(prop_id, prop_id),
                 "statementValue": labels.get(stmt_val, stmt_val) if stmt_val else ""
@@ -732,6 +733,24 @@ def validate_references():
 
         # Sort dead links first so editors see broken references immediately
         results.sort(key=lambda r: (0 if r["status"] == "dead" else 1, r["propertyLabel"]))
+
+        # Log dead references for monitoring and review
+        dead_refs = [r for r in results if r["status"] == "dead"]
+        for ref in dead_refs:
+            app.logger.warning(
+                "Dead reference detected",
+                extra={
+                    "qid": qid,
+                    "url": ref["url"],
+                    "httpStatus": ref.get("httpStatus"),
+                    "error": ref.get("error"),
+                    "property": ref.get("propertyId"),
+                    "propertyLabel": ref.get("propertyLabel"),
+                    "statementValue": ref.get("statementValue"),
+                    "sourceCategory": ref.get("sourceCategory"),
+                    "hasArchive": bool(ref.get("suggestedArchive")),
+                }
+            )
 
         return jsonify({
             "qid": qid,
