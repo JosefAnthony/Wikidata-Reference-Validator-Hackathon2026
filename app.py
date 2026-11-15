@@ -87,6 +87,17 @@ def search():
     if not query:
         return jsonify([])
 
+    refresh = request.args.get("refresh") == "1"
+    cache_key = query.strip().lower()
+
+    if not refresh:
+        cached = SEARCH_CACHE.get(cache_key)
+        if cached is not MISS:
+            print(f"[CACHE HIT] search: {cache_key}")
+            return jsonify(cached)
+
+    print(f"[CACHE MISS] search: {cache_key} (refresh={refresh})")
+
     params = {
         "action": "wbsearchentities",
         "search": query,
@@ -104,6 +115,9 @@ def search():
             "label": item.get("label"),
             "description": item.get("description", "")
         })
+
+    if r.ok:  # never cache a failed request
+        SEARCH_CACHE.set(cache_key, results)
 
     return jsonify(results)
 
@@ -133,11 +147,19 @@ async def check_url(session, url):
 # WAYBACK MACHINE HELPER  ✅ FIXED
 # ---------------------------------------------------
 
-def fetch_wayback_snapshot(url):
+def fetch_wayback_snapshot(url, refresh=False):
     """
     Fetch latest available Wayback Machine snapshot for a URL.
-    Returns None if no archive exists.
+    Returns None if no archive exists. Results are cached.
     """
+    if not refresh:
+        cached = WAYBACK_CACHE.get(url)
+        if cached is not MISS:
+            print(f"[CACHE HIT] wayback: {url}")
+            return cached
+
+    print(f"[CACHE MISS] wayback: {url} (refresh={refresh})")
+
     try:
         params = {"url": url}
         r = requests.get(WAYBACK_API, params=params, timeout=10)
@@ -147,13 +169,19 @@ def fetch_wayback_snapshot(url):
         snapshot = data.get("archived_snapshots", {}).get("closest")
 
         if snapshot and snapshot.get("available"):
-            return {
+            result = {
                 "archiveUrl": snapshot.get("url"),
                 "timestamp": snapshot.get("timestamp"),
                 "status": snapshot.get("status")
             }
+        else:
+            result = None  # Wayback answered: no snapshot exists
+
+        WAYBACK_CACHE.set(url, result)
+        return result
 
     except Exception as e:
+        # A failed request is NOT cached, so it is tried again next time
         print(f"[Wayback] Failed for {url}: {e}")
 
     return None
@@ -204,9 +232,12 @@ def fetch_labels(ids):
 def validate_references():
     data = request.get_json(force=True)
     if not data or "qid" not in data:
-        return jsonify({"error": "Missing QID"}), 400
+       return jsonify({"error": "Missing QID"}), 400
 
-    qid = data["qid"].strip()
+       qid = (data.get("qid") or "").strip()
+    if not qid:
+        return jsonify({"error": "Please select a Wikidata item first"}), 400
+    refresh = request.args.get("refresh") == "1"
 
     try:
         params = {
@@ -262,7 +293,7 @@ def validate_references():
                 tasks = [check_url(session, ref["url"]) for ref in refs_data]
                 return await asyncio.gather(*tasks)
 
-        url_statuses = asyncio.run(run_checks())
+                url_statuses = asyncio.run(run_checks())
         labels = fetch_labels(all_ids_to_label)
 
         results = []
@@ -277,9 +308,9 @@ def validate_references():
                 ) if ref_data["statementValue"] else ""
             }
 
-            # 🔁 Wayback suggestion ONLY for dead refs
+            # Wayback suggestion ONLY for dead refs
             if status_data["status"] == "dead":
-                archive = fetch_wayback_snapshot(ref_data["url"])
+                archive = fetch_wayback_snapshot(ref_data["url"], refresh)
                 if archive:
                     result["suggestedArchive"] = archive
 
@@ -289,9 +320,3 @@ def validate_references():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-# ---------------------------------------------------
-
-if __name__ == "__main__":
-    app.run(debug=True)
