@@ -231,12 +231,13 @@ def fetch_labels(ids):
 @app.route("/validate", methods=["POST"])
 def validate_references():
     data = request.get_json(force=True)
-    if not data or "qid" not in data:
-       return jsonify({"error": "Missing QID"}), 400
+    if not data:
+        return jsonify({"error": "Missing QID"}), 400
 
-       qid = (data.get("qid") or "").strip()
+    qid = (data.get("qid") or "").strip()
     if not qid:
         return jsonify({"error": "Please select a Wikidata item first"}), 400
+
     refresh = request.args.get("refresh") == "1"
 
     try:
@@ -293,7 +294,7 @@ def validate_references():
                 tasks = [check_url(session, ref["url"]) for ref in refs_data]
                 return await asyncio.gather(*tasks)
 
-                url_statuses = asyncio.run(run_checks())
+        url_statuses = asyncio.run(run_checks())
         labels = fetch_labels(all_ids_to_label)
 
         results = []
@@ -320,3 +321,9 @@ def validate_references():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------
+
+if __name__ == "__main__":
+    app.run(debug=True)
