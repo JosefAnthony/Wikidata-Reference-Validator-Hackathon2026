@@ -1557,3 +1557,17 @@ body:not(.page-home) .site-header { border-bottom-color: var(--border); }
   .data-table .url-cell a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .data-table tbody tr:hover td { background: transparent; }
 }
+/* Interface language picker (i18n) */
+.ui-lang {
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  padding: 4px 8px;
+  opacity: 0.85;
+  cursor: pointer;
+}
+.ui-lang:hover { opacity: 1; }
+.ui-lang option { color: #111; background: #fff; }

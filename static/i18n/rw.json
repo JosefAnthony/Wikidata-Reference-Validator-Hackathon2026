@@ -1,0 +1,21 @@
+{
+  "nav.home": "Ahabanza",
+  "nav.howto": "Uko wakoresha",
+  "nav.about": "Ibyerekeye",
+  "nav.login": "Injira",
+  "nav.logout": "Sohoka",
+  "nav.skip": "Simbukira ku bikubiyemo",
+  "nav.langLabel": "Ururimi rw'igikoresho",
+  "theme.toggleTitle": "Hindura hagati y'umucyo n'umwijima",
+  "home.lead": "Shakisha kandi ukosore amasoko yangiritse kuri Wikidata",
+  "home.meta1": "Igenzura ry'amahuza ako kanya",
+  "home.meta2": "Kopi zabitswe kuri Wayback Machine",
+  "home.meta3": "Ibyiciro 8 by'amasoko",
+  "search.label": "Izina ry'ikintu cya Wikidata cyangwa QID",
+  "search.placeholder": "Shakisha ibintu bya Wikidata cyangwa shyiramo QID…",
+  "search.clear": "Siba ibyashakishijwe",
+  "search.voice": "Shakisha ukoresheje ijwi",
+  "search.validate": "Genzura amasoko",
+  "search.suggestionsLabel": "Ibintu bya Wikidata bihuye",
+  "search.dataLangLabel": "Ururimi rwo kwerekana ibyashakishijwe n'amazina"
+}

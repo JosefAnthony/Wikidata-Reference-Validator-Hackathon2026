@@ -10,10 +10,10 @@
   <h1 class="hero__title" id="heroTitle">
     <span><span class="hero__title-accent">Wikidata</span> Reference Validator</span><sup class="hero__version">v2</sup>
   </h1>
-  <p class="hero__lead">Find and Fix Broken Wikidata References</p>
+  <p class="hero__lead" data-i18n="home.lead">Find and Fix Broken Wikidata References</p>
 
   <form class="search" id="searchForm" role="search" autocomplete="off">
-    <label class="visually-hidden" for="search">Wikidata item name or QID</label>
+    <label class="visually-hidden" for="search" data-i18n="search.label">Wikidata item name or QID</label>
     <div class="search__field">
       <i class="bi bi-search search__icon" aria-hidden="true"></i>
       <input
@@ -21,18 +21,19 @@
         id="search"
         class="search__input"
         placeholder="Search Wikidata items or paste a QID…"
+        data-i18n-placeholder="search.placeholder"
         role="combobox"
         aria-autocomplete="list"
         aria-expanded="false"
         aria-controls="suggestions"
         spellcheck="false"
         autofocus>
-      <button type="button" class="search__clear" id="searchClear" aria-label="Clear search" hidden>
+      <button type="button" class="search__clear" id="searchClear" aria-label="Clear search" data-i18n-aria="search.clear" hidden>
         <i class="bi bi-x-lg" aria-hidden="true"></i>
       </button>
       <kbd class="search__kbd" aria-hidden="true">/</kbd>
-      <button type="button" class="search__mic" id="voiceBtn" aria-label="Search by voice" aria-pressed="false"
-              title="Search by voice" hidden>
+      <button type="button" class="search__mic" id="voiceBtn" aria-label="Search by voice" data-i18n-aria="search.voice" aria-pressed="false"
+              title="Search by voice" data-i18n-title="search.voice" hidden>
         <i class="bi bi-mic" aria-hidden="true"></i>
       </button>
 
@@ -40,7 +41,7 @@
         <i class="bi bi-translate lang__icon" aria-hidden="true"></i>
         <span class="lang__value" data-language-value aria-hidden="true">English</span>
         <span class="lang__code" data-language-code aria-hidden="true">EN</span>
-        <select id="language" class="lang__select" aria-label="Display language for search and labels">
+        <select id="language" class="lang__select" aria-label="Display language for search and labels" data-i18n-aria="search.dataLangLabel">
           {% for code, name in languages %}
             <option value="{{ code }}"{% if code == default_language %} selected{% endif %}>{{ name }}</option>
           {% endfor %}
@@ -48,18 +49,18 @@
         <i class="bi bi-chevron-down lang__caret" aria-hidden="true"></i>
       </div>
 
-      <button type="submit" class="search__submit" id="validateBtn" aria-label="Validate references">
+      <button type="submit" class="search__submit" id="validateBtn" aria-label="Validate references" data-i18n-aria="search.validate">
         <i class="bi bi-arrow-up" aria-hidden="true"></i>
       </button>
     </div>
-    <ul id="suggestions" class="suggestions" role="listbox" aria-label="Matching Wikidata items" hidden></ul>
+    <ul id="suggestions" class="suggestions" role="listbox" aria-label="Matching Wikidata items" data-i18n-aria="search.suggestionsLabel" hidden></ul>
     <p class="voice-status" id="voiceStatus" role="status" aria-live="polite" hidden></p>
   </form>
 
   <p class="hero__meta">
-    <span>Live link checks</span><span class="sep">·</span>
-    <span>Wayback Machine snapshots</span><span class="sep">·</span>
-    <span>8 source categories</span>
+    <span data-i18n="home.meta1">Live link checks</span><span class="sep">·</span>
+    <span data-i18n="home.meta2">Wayback Machine snapshots</span><span class="sep">·</span>
+    <span data-i18n="home.meta3">8 source categories</span>
   </p>
 </section>
 

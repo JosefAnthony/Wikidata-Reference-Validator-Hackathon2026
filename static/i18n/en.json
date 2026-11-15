@@ -1,0 +1,21 @@
+{
+  "nav.home": "Home",
+  "nav.howto": "How to use",
+  "nav.about": "About",
+  "nav.login": "Log in",
+  "nav.logout": "Log out",
+  "nav.skip": "Skip to content",
+  "nav.langLabel": "Interface language",
+  "theme.toggleTitle": "Toggle light / dark mode",
+  "home.lead": "Find and Fix Broken Wikidata References",
+  "home.meta1": "Live link checks",
+  "home.meta2": "Wayback Machine snapshots",
+  "home.meta3": "8 source categories",
+  "search.label": "Wikidata item name or QID",
+  "search.placeholder": "Search Wikidata items or paste a QID…",
+  "search.clear": "Clear search",
+  "search.voice": "Search by voice",
+  "search.validate": "Validate references",
+  "search.suggestionsLabel": "Matching Wikidata items",
+  "search.dataLangLabel": "Display language for search and labels"
+}
