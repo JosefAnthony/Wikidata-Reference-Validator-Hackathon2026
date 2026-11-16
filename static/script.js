@@ -1,42 +1,78 @@
 /**************************************
- * AUTOCOMPLETE SEARCH (UNCHANGED FLOW)
+ * AUTOCOMPLETE SEARCH
  **************************************/
+let autocompleteRequestId = 0;
+
 document.getElementById("search").addEventListener("input", async function () {
-  const query = this.value;
+  const query = this.value.trim();
+  const input = this;
   const suggestions = document.getElementById("suggestions");
+  const requestId = ++autocompleteRequestId;
   suggestions.innerHTML = "";
+  input.removeAttribute("data-qid");
+  input.removeAttribute("data-label");
 
   if (query.length < 3) return;
 
-  const response = await fetch(
-    `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(
-      query
-    )}&language=en&format=json&origin=*`
-  );
-  const data = await response.json();
+  const loading = document.createElement("li");
+  loading.className = "list-group-item text-muted";
+  loading.setAttribute("role", "status");
+  loading.textContent = "Searching Wikidata...";
+  suggestions.appendChild(loading);
 
-  data.search.forEach(item => {
-    const li = document.createElement("li");
-    li.className = "list-group-item list-group-item-action";
+  try {
+    const response = await fetch(
+      `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(
+        query,
+      )}&language=en&format=json&origin=*`,
+    );
+    if (!response.ok) throw new Error(`Wikidata search failed: ${response.status}`);
 
-    // label + description (Wikidata-style)
-    li.innerHTML = `
-      <div>
-        <strong>${item.label}</strong>
-        <div class="small text-muted">${item.description || ""}</div>
-      </div>
-    `;
+    const data = await response.json();
+    if (requestId !== autocompleteRequestId) return;
 
-    li.onclick = () => {
-      const input = document.getElementById("search");
-      input.value = item.label;
-      input.setAttribute("data-qid", item.id);
-      input.setAttribute("data-label", item.label);
-      suggestions.innerHTML = "";
-    };
+    suggestions.innerHTML = "";
+    const items = Array.isArray(data.search) ? data.search : [];
 
-    suggestions.appendChild(li);
-  });
+    if (items.length === 0) {
+      const emptyState = document.createElement("li");
+      emptyState.className = "list-group-item text-muted";
+      emptyState.textContent = "No matching Wikidata items found.";
+      suggestions.appendChild(emptyState);
+      return;
+    }
+
+    items.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "list-group-item list-group-item-action";
+
+      const content = document.createElement("div");
+      const label = document.createElement("strong");
+      label.textContent = item.label;
+      const description = document.createElement("div");
+      description.className = "small text-muted";
+      description.textContent = item.description || "";
+      content.append(label, description);
+      li.appendChild(content);
+
+      li.onclick = () => {
+        input.value = item.label;
+        input.setAttribute("data-qid", item.id);
+        input.setAttribute("data-label", item.label);
+        suggestions.innerHTML = "";
+      };
+
+      suggestions.appendChild(li);
+    });
+  } catch {
+    if (requestId !== autocompleteRequestId) return;
+
+    suggestions.innerHTML = "";
+    const errorState = document.createElement("li");
+    errorState.className = "list-group-item text-danger";
+    errorState.textContent = "Unable to search Wikidata. Please try again.";
+    suggestions.appendChild(errorState);
+  }
 });
 
 /**************************************
