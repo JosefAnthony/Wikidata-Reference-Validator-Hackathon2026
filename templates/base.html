@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   {% block head %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}"{% if user %} data-authenticated="true"{% endif %}>
   <a class="skip-link" href="#main">Skip to content</a>
 
   <header class="site-header">
@@ -35,7 +35,6 @@
       <a class="brand" href="{{ url_for('home') }}" aria-label="Wikidata Reference Validator home">
         <img class="brand__logo" src="{{ url_for('static', filename='app-icon.png') }}" alt="" width="27" height="26">
         <span class="brand__name">Wikidata Reference Validator</span>
-        <span class="brand__version">v2</span>
       </a>
 
       <nav class="site-nav" aria-label="Main">
@@ -47,6 +46,9 @@
         {% endfor %}
 
         {% if user %}
+          <a class="site-nav__link {% if request.endpoint == 'contributions' %}is-active{% endif %}"
+             href="{{ url_for('contributions') }}"
+             {% if request.endpoint == 'contributions' %}aria-current="page"{% endif %}>Contributions</a>
           <span class="site-nav__user" title="Signed in to Wikimedia as {{ user.username }}">
             <i class="bi bi-person-circle" aria-hidden="true"></i>
             <span class="site-nav__user-name">{{ user.username }}</span>
@@ -75,9 +77,9 @@
   <footer class="site-footer">
     <div class="site-footer__inner">
       <p>
-        Data from <a href="https://www.wikidata.org/" target="_blank" rel="noopener">Wikidata</a>,
-        archives from the <a href="https://web.archive.org/" target="_blank" rel="noopener">Wayback Machine</a>.
-        Wikidata content is available under <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0</a>.
+        Wikidata Reference Validator helps editors keep Wikidata citations reliable.
+        Search any item, check its external references for dead links, and find
+        archived copies to replace them.
       </p>
     </div>
   </footer>

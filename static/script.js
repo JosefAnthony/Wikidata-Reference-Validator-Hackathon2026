@@ -16,7 +16,7 @@ const state = {
   activeIndex: -1,
   searchRequestId: 0,
   report: null,          // last successful /validate response (+ duration)
-  filters: { status: "all", category: "all", text: "" },
+  filters: { status: "all" },
 };
 
 const QID_PATTERN = /^[Qq]\d+$/;
@@ -84,14 +84,6 @@ phoneScreen.addEventListener("change", applyPlaceholder);
 /**************************************
  * AUTOCOMPLETE
  **************************************/
-function debounce(fn, wait) {
-  let timer;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), wait);
-  };
-}
-
 function closeSuggestions() {
   state.suggestions = [];
   state.activeIndex = -1;
@@ -128,7 +120,21 @@ function renderSuggestions() {
   }
 }
 
-const fetchSuggestions = debounce(async query => {
+function showSuggestionsLoading() {
+  state.suggestions = [];
+  state.activeIndex = -1;
+  els.suggestions.innerHTML = `
+    <li class="suggestion suggestion--loading" role="option" aria-disabled="true">
+      <span class="suggestion__text">
+        <span class="suggestion__label">Searching Wikidata…</span>
+      </span>
+    </li>`;
+  els.suggestions.hidden = false;
+  els.input.setAttribute("aria-expanded", "true");
+  els.input.removeAttribute("aria-activedescendant");
+}
+
+const fetchSuggestions = async query => {
   const requestId = ++state.searchRequestId;
   const language = currentLanguage();
   try {
@@ -144,7 +150,7 @@ const fetchSuggestions = debounce(async query => {
   } catch {
     if (requestId === state.searchRequestId) closeSuggestions();
   }
-}, 220);
+};
 
 function selectSuggestion(index) {
   const item = state.suggestions[index];
@@ -160,11 +166,12 @@ els.input.addEventListener("input", () => {
   state.selected = null;
   els.clear.hidden = !els.input.value;
 
-  if (query.length < 2) {
+  if (!query) {
     state.searchRequestId++;
     closeSuggestions();
     return;
   }
+  showSuggestionsLoading();
   fetchSuggestions(query);
 });
 
@@ -193,10 +200,6 @@ els.suggestions.addEventListener("mousedown", e => {
   if (!li) return;
   e.preventDefault();
   selectSuggestion(Number(li.dataset.index));
-});
-
-document.addEventListener("click", e => {
-  if (!els.form.contains(e.target)) closeSuggestions();
 });
 
 els.clear.addEventListener("click", () => {
@@ -336,12 +339,15 @@ async function validate(qid, label, { updateHistory = true } = {}) {
     }
 
     if (data.message) {
-      showNotice("info", data.message);
+      const retry = data.qid
+        ? () => validate(data.qid, data.label || data.qid, { updateHistory: false })
+        : undefined;
+      showNotice("info", data.message, { retry });
       return;
     }
 
     state.report = { ...data, duration };
-    state.filters = { status: "all", category: "all", text: "" };
+    state.filters = { status: "all" };
     saveReport(state.report);
     renderReport();
   } catch (err) {
@@ -406,15 +412,10 @@ function groupByProperty(refs) {
 }
 
 function matchesFilters(ref) {
-  const { status, category, text } = state.filters;
+  const { status } = state.filters;
   if (status === "dead" && ref.status !== "dead") return false;
   if (status === "alive" && ref.status !== "alive") return false;
   if (status === "archived" && !(ref.status === "dead" && ref.suggestedArchive)) return false;
-  if (category !== "all" && (ref.sourceCategory || "other") !== category) return false;
-  if (text) {
-    const haystack = `${ref.url} ${ref.propertyLabel} ${ref.statementValue} ${ref.domain}`.toLowerCase();
-    if (!haystack.includes(text)) return false;
-  }
   return true;
 }
 
@@ -475,12 +476,16 @@ function renderReport() {
             </p>
           </div>
           <div class="article__actions">
-            <a class="btn-ghost" href="${wikidataUrl(qid)}" target="_blank" rel="noopener" title="Edit on Wikidata">
+            <a class="btn-ghost" href="${wikidataUrl(qid)}" target="_blank" rel="noopener"
+               data-edit-track="item" title="Edit on Wikidata">
               <i class="bi bi-pencil-square"></i><span>Edit</span>
             </a>
             <a class="btn-ghost" href="/report" target="_blank" rel="noopener" title="Open full report">
               <i class="bi bi-bar-chart"></i><span>Report</span>
             </a>
+            <button type="button" class="btn-ghost" data-action="revalidate" title="Validate this item again">
+              <i class="bi bi-arrow-clockwise"></i><span>Validate again</span>
+            </button>
             <button type="button" class="btn-ghost" data-action="share" title="Copy link to this result">
               <i class="bi bi-link-45deg"></i><span>Share</span>
             </button>
@@ -531,25 +536,6 @@ function renderReport() {
                   ${text}<span class="count">${n}</span>
                 </button>`).join("")}
             </div>
-            <div class="filter-text">
-              <i class="bi bi-search" aria-hidden="true"></i>
-              <label class="visually-hidden" for="filterText">Filter by URL, domain or statement</label>
-              <input type="search" id="filterText" placeholder="Filter by URL, domain or statement">
-            </div>
-          </div>
-
-          <div class="category-chips" role="radiogroup" aria-label="Source type">
-            <button type="button" role="radio" class="chip chip--filter" data-category="all"
-                    aria-checked="${state.filters.category === "all"}">All sources</button>
-            ${categoryOrder.map(key => {
-              const meta = sourceCategoryMeta(key);
-              const c = categories[key];
-              return `
-                <button type="button" role="radio" class="chip chip--filter" data-category="${key}"
-                        aria-checked="${state.filters.category === key}">
-                  <i class="bi ${meta.icon}"></i> ${meta.label}<span class="count">${c.total}</span>${c.dead ? `<span class="count count--dead" title="${c.dead} unreachable">${c.dead}</span>` : ""}
-                </button>`;
-            }).join("")}
           </div>
         </section>
 
@@ -562,7 +548,7 @@ function renderReport() {
             ${counts.archived ? `<li><button type="button" data-status-link="archived">References with archived copies</button></li>` : ""}
             ${counts.dead && counts.archived < counts.dead ? `<li><span>Dead references without archives (${counts.dead - counts.archived})</span></li>` : ""}
             ${categoryOrder.map(key => `
-              <li><button type="button" data-category-link="${key}">${sourceCategoryMeta(key).label} (${categories[key].total})</button></li>
+              <li><span>${sourceCategoryMeta(key).label} (${categories[key].total})</span></li>
             `).join("")}
           </ul>
         </footer>
@@ -570,7 +556,6 @@ function renderReport() {
     </div>`;
 
   renderSections();
-  bindReportEvents();
   els.result.querySelector(".article")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -615,6 +600,11 @@ function renderReference(ref) {
 
       <div class="ref__actions">
         <a class="icon-btn" href="${wikidataUrl(qid, ref.propertyId)}" target="_blank" rel="noopener"
+           data-edit-track="reference"
+           data-edit-url="${escapeHtml(ref.url)}"
+           data-edit-property="${escapeHtml(ref.propertyId || "")}"
+           data-edit-property-label="${escapeHtml(ref.propertyLabel || "")}"
+           data-edit-value="${escapeHtml(ref.statementValue || "")}"
            title="Edit this statement on Wikidata" aria-label="Edit this statement on Wikidata">
           <i class="bi bi-pencil"></i>
         </a>
@@ -666,20 +656,11 @@ function renderSections() {
   observeSections();
 }
 
-function setFilter(key, value) {
-  state.filters[key] = value;
+function setStatusFilter(status) {
+  state.filters.status = status;
   els.result.querySelectorAll("[data-status]").forEach(b =>
-    b.setAttribute("aria-checked", String(b.dataset.status === state.filters.status)));
-  els.result.querySelectorAll("[data-category]").forEach(b =>
-    b.setAttribute("aria-checked", String(b.dataset.category === state.filters.category)));
+    b.setAttribute("aria-checked", String(b.dataset.status === status)));
   renderSections();
-}
-
-function bindReportEvents() {
-  const filterText = document.getElementById("filterText");
-  filterText?.addEventListener("input", debounce(() => {
-    setFilter("text", filterText.value.trim().toLowerCase());
-  }, 150));
 }
 
 /** Keep the contents list expanded on wide screens and collapsed on narrow ones, even after resizing/rotating. */
@@ -688,7 +669,6 @@ narrowScreen.addEventListener("change", e => {
   const toc = els.result.querySelector(".toc__box");
   if (toc) toc.open = !e.matches;
 });
-
 /** Highlight the table-of-contents entry for the section currently in view. */
 let sectionObserver = null;
 function observeSections() {
@@ -720,16 +700,46 @@ document.addEventListener("keydown", e => {
 /**************************************
  * DELEGATED ACTIONS (results area)
  **************************************/
+function trackEditClick(link) {
+  if (!state.report || !document.body.hasAttribute("data-authenticated")) return;
+
+  const references = Array.isArray(state.report.references)
+    ? state.report.references.slice(0, 300).map(ref => ({
+        url: ref.url,
+        propertyId: ref.propertyId || "",
+      }))
+    : [];
+
+  const payload = {
+    qid: state.report.qid,
+    label: state.report.label,
+    propertyId: link.dataset.editProperty || "",
+    propertyLabel: link.dataset.editPropertyLabel || "",
+    statementValue: link.dataset.editValue || "",
+    url: link.dataset.editUrl || "",
+    references,
+  };
+
+  // The Edit link opens in a new tab, so the request can finish normally.
+  fetch("/api/history/edit-click", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 els.result.addEventListener("click", e => {
+  const editLink = e.target.closest("[data-edit-track]");
+  if (editLink) trackEditClick(editLink);
+
   const target = e.target.closest("button, a");
   if (!target) return;
 
-  if (target.dataset.status) return setFilter("status", target.dataset.status);
-  if (target.dataset.category) return setFilter("category", target.dataset.category);
+  if (target.dataset.status) return setStatusFilter(target.dataset.status);
 
-  if (target.dataset.statusLink || target.dataset.categoryLink) {
-    if (target.dataset.statusLink) setFilter("status", target.dataset.statusLink);
-    if (target.dataset.categoryLink) setFilter("category", target.dataset.categoryLink);
+  if (target.dataset.statusLink) {
+    setStatusFilter(target.dataset.statusLink);
     document.getElementById("overview")?.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
@@ -740,6 +750,11 @@ els.result.addEventListener("click", e => {
     case "new-search":
       resetSearch();
       break;
+    case "revalidate":
+      if (state.report) {
+        validate(state.report.qid, state.report.label, { updateHistory: false });
+      }
+      break;
     case "share":
       copyText(window.location.href, "Link copied — share it to show this result");
       break;
@@ -747,10 +762,8 @@ els.result.addEventListener("click", e => {
       tts.toggle();
       break;
     case "clear-filters": {
-      const filterText = document.getElementById("filterText");
-      if (filterText) filterText.value = "";
-      state.filters = { status: "all", category: "all", text: "" };
-      setFilter("status", "all");
+      state.filters = { status: "all" };
+      setStatusFilter("all");
       break;
     }
   }
