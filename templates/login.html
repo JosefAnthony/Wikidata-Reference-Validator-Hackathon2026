@@ -1,70 +1,46 @@
 {% extends "base.html" %}
 
 {% block title %}Log in – Wikidata Reference Validator{% endblock %}
-{% block body_class %}page-auth{% endblock %}
+
+{% block body_class %}page-login{% endblock %}
 
 {% block content %}
-<section class="auth">
-  <div class="auth__panel">
-    <p class="page__eyebrow">Account</p>
-    <h1 class="auth__title">Log in to the validator</h1>
-    <p class="auth__lead">
-      Sign in with your Wikimedia account. Logging in is optional — you can
-      validate references without an account.
-    </p>
+<article class="page auth">
+  <p class="page__eyebrow">Account</p>
+  <h1 class="page__title">Log in</h1>
+  <p class="page__tagline">Sign in with your Wikimedia account.</p>
 
-    {% if error %}
-    <div class="auth__error" role="alert">
-      <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
-      <span>{{ error }}</span>
+  {% if error %}
+    <div class="notice notice--error" role="alert">
+      <i class="bi bi-exclamation-octagon notice__icon" aria-hidden="true"></i>
+      <div class="notice__body">
+        <p class="notice__message">{{ error }}</p>
+      </div>
     </div>
-    {% endif %}
+  {% endif %}
 
-    {% if oauth_configured %}
-    <form class="auth__form" action="{{ url_for('oauth_login', next=next) }}" method="get">
-      <button type="submit" class="btn-solid auth__submit" data-loading-label="Redirecting to Wikimedia…">
+  {% if oauth_configured %}
+    <div class="auth__actions">
+      <a class="btn-solid" href="{{ url_for('oauth_login', next=next) }}">
         <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
-        <span>Sign in with Wikimedia</span>
-      </button>
-    </form>
-    <p class="auth__hint">
-      You will be redirected to Wikimedia to authorize this app. Your password
-      is never shared with us.
-    </p>
-    <p class="auth__back">
-      <a href="{{ url_for('home') }}">← Continue without an account</a>
-    </p>
-    {% else %}
-    <button type="button" class="btn-solid auth__submit" disabled>
-      <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
-      <span>Sign-in unavailable</span>
-    </button>
-    <p class="auth__hint auth__hint--warning">
-      Wikimedia sign-in is not configured on this server. Set
-      <code>WIKIMEDIA_CLIENT_SECRET</code> (for example in a <code>.env</code>
-      file) to enable it.
-    </p>
-    <p class="auth__back">
-      <a href="{{ url_for('home') }}">← Back to the validator</a>
-    </p>
-    {% endif %}
-  </div>
-</section>
-{% endblock %}
-
-{% block scripts %}
-<script>
-  (function () {
-    var form = document.querySelector(".auth__form");
-    if (!form) return;
-    form.addEventListener("submit", function () {
-      var button = form.querySelector("button[type='submit']");
-      if (!button) return;
-      button.disabled = true;
-      button.innerHTML =
-        '<span class="auth__spinner" aria-hidden="true"></span>' +
-        '<span>Redirecting to Wikimedia…</span>';
-    });
-  })();
-</script>
+        Sign in with Wikimedia
+      </a>
+      <a class="btn-ghost" href="{{ url_for('home') }}">Continue without an account</a>
+    </div>
+  {% else %}
+    <div class="notice" role="status">
+      <i class="bi bi-info-circle notice__icon" aria-hidden="true"></i>
+      <div class="notice__body">
+        <p class="notice__message">
+          Wikimedia sign-in is not configured on this server. Set
+          <code>WIKIMEDIA_CLIENT_SECRET</code> (for example in a <code>.env</code> file)
+          to enable it. You can still use the validator without an account.
+        </p>
+        <div class="notice__actions">
+          <a class="btn-ghost" href="{{ url_for('home') }}"><i class="bi bi-search"></i> Check an item</a>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</article>
 {% endblock %}
