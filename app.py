@@ -827,8 +827,8 @@ def report():
     return render_template("report.html")
 
 
-@app.route("/history")
-def history():
+@app.route("/contributions")
+def contributions():
     user = _history_user()
     if not user:
         return redirect(url_for("login"))
@@ -865,6 +865,13 @@ def history():
     )
 
 
+@app.route("/history")
+def history_redirect():
+    """Keep old bookmarks and links working."""
+    return redirect(url_for("contributions", **request.args.to_dict(flat=True)))
+
+
+@app.route("/contributions/clear", methods=["POST"])
 @app.route("/history/clear", methods=["POST"])
 def clear_history():
     user = _history_user()
@@ -884,7 +891,7 @@ def clear_history():
                 )
         except Exception:
             app.logger.warning("Could not clear history", exc_info=True)
-    return redirect(url_for("history"))
+    return redirect(url_for("contributions"))
 
 
 @app.route("/api/history/edit-click", methods=["POST"])
@@ -905,7 +912,7 @@ def history_edit_click():
 
 @app.after_request
 def no_store_history_pages(response):
-    if request.endpoint in ("history", "clear_history"):
+    if request.endpoint in ("contributions", "history_redirect", "clear_history"):
         response.headers["Cache-Control"] = "no-store"
     return response
 

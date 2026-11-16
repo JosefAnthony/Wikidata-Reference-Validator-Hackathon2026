@@ -46,9 +46,9 @@
         {% endfor %}
 
         {% if user %}
-          <a class="site-nav__link {% if request.endpoint == 'history' %}is-active{% endif %}"
-             href="{{ url_for('history') }}"
-             {% if request.endpoint == 'history' %}aria-current="page"{% endif %}>History</a>
+          <a class="site-nav__link {% if request.endpoint == 'contributions' %}is-active{% endif %}"
+             href="{{ url_for('contributions') }}"
+             {% if request.endpoint == 'contributions' %}aria-current="page"{% endif %}>Contributions</a>
           <span class="site-nav__user" title="Signed in to Wikimedia as {{ user.username }}">
             <i class="bi bi-person-circle" aria-hidden="true"></i>
             <span class="site-nav__user-name">{{ user.username }}</span>

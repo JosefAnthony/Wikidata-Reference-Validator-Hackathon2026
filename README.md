@@ -316,22 +316,22 @@ this tree plus GitLab's history. The second `merge` is a no-op unless GitLab
 
 ---
 
-## 📚 User History
+## 📚 User Contributions
 
-When you are signed in with Wikimedia, a **History** link appears in the
+When you are signed in with Wikimedia, a **Contributions** link appears in the
 navigation bar. It shows:
 
-* **Search history** — every item you validate, with alive, unreachable, and
+* **Search activity** — every item you validate, with alive, unreachable, and
   archived reference counts. Paginated at 10 items per page.
-* **Edit history** — every Edit link you open, including the reference URL
+* **Edit activity** — every Edit link you open, including the reference URL
   before the edit. After you save the change on Wikidata and validate the item
   again, the validator compares the new references with the saved snapshot and
   shows the new URL (plus any added or removed references).
 
-History is stored locally in `instance/history.db` (SQLite), keyed to your
-Wikimedia user ID. OAuth tokens and other credentials are never stored there.
-Each section can be cleared from the history page. The database is created
-automatically and is ignored by git.
+Contributions are stored locally in `instance/history.db` (SQLite), keyed to
+your Wikimedia user ID. OAuth tokens and other credentials are never stored
+there. Each section can be cleared from the contributions page. The database is
+created automatically and is ignored by git.
 
 ---
 

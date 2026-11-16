@@ -1,26 +1,26 @@
 {% extends "base.html" %}
 
-{% block title %}Your history – Wikidata Reference Validator{% endblock %}
-{% block body_class %}page-history{% endblock %}
+{% block title %}Your contributions – Wikidata Reference Validator{% endblock %}
+{% block body_class %}page-contributions{% endblock %}
 
 {% block content %}
 <section class="page page--wide history">
   <p class="page__eyebrow">Your activity</p>
-  <h1 class="page__title">History</h1>
+  <h1 class="page__title">Contributions</h1>
   <p class="page__tagline">
     Searches and edit activity recorded for <strong>{{ user.username }}</strong>.
-    This history is stored by the validator and is only visible while you are signed in.
+    This activity is stored by the validator and is only visible while you are signed in.
   </p>
 
   <section class="history__section" id="searches" aria-labelledby="searchesTitle">
     <header class="history__head">
       <div>
-        <h2 id="searchesTitle">Search history</h2>
+        <h2 id="searchesTitle">Search activity</h2>
         <p>Items you validated with the tool{% if search_total %} · {{ search_total }} total{% endif %}.</p>
       </div>
       {% if searches %}
       <form method="post" action="{{ url_for('clear_history') }}"
-            onsubmit="return confirm('Clear your search history?');">
+            onsubmit="return confirm('Clear your search activity?');">
         <input type="hidden" name="kind" value="searches">
         <button type="submit" class="link-btn">Clear</button>
       </form>
@@ -57,14 +57,14 @@
     </ol>
 
     {% if search_total_pages > 1 %}
-    <nav class="history-pagination" aria-label="Search history pagination">
+    <nav class="history-pagination" aria-label="Search activity pagination">
       <p class="history-pagination__summary">
         Showing {{ search_start }}–{{ search_end }} of {{ search_total }}
       </p>
       <div class="history-pagination__pages">
         {% if search_page > 1 %}
         <a class="history-pagination__link"
-           href="{{ url_for('history', page=search_page - 1) }}#searches"
+           href="{{ url_for('contributions', page=search_page - 1) }}#searches"
            rel="prev">← Previous</a>
         {% else %}
         <span class="history-pagination__link is-disabled" aria-disabled="true">← Previous</span>
@@ -76,7 +76,7 @@
 
         {% if search_page < search_total_pages %}
         <a class="history-pagination__link"
-           href="{{ url_for('history', page=search_page + 1) }}#searches"
+           href="{{ url_for('contributions', page=search_page + 1) }}#searches"
            rel="next">Next →</a>
         {% else %}
         <span class="history-pagination__link is-disabled" aria-disabled="true">Next →</span>
@@ -95,12 +95,12 @@
   <section class="history__section" id="edits" aria-labelledby="editsTitle">
     <header class="history__head">
       <div>
-        <h2 id="editsTitle">Edit history</h2>
+        <h2 id="editsTitle">Edit activity</h2>
         <p>Edit links you opened, with the reference URL before and after your change.</p>
       </div>
       {% if edits %}
       <form method="post" action="{{ url_for('clear_history') }}"
-            onsubmit="return confirm('Clear your edit history?');">
+            onsubmit="return confirm('Clear your edit activity?');">
         <input type="hidden" name="kind" value="edits">
         <button type="submit" class="link-btn">Clear</button>
       </form>
