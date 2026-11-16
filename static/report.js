@@ -22,7 +22,8 @@
   /* ---------- Back links ---------- */
   if (report.qid) {
     const back = document.getElementById("backToResults");
-    back.href = `/?item=${encodeURIComponent(report.qid)}`;
+    const lang = report.language && report.language !== "en" ? `&lang=${encodeURIComponent(report.language)}` : "";
+    back.href = `/?item=${encodeURIComponent(report.qid)}${lang}`;
     back.hidden = false;
   }
 

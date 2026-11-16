@@ -7,6 +7,8 @@ This tool checks the external reference URLs on a Wikidata item (QID) to determi
 ## 🚀 What it does
 
 * 🔍 Autocompletes and selects Wikidata items
+* 🌐 Searches and labels items in a selectable display language (English by default, used as the fallback)
+* 🔐 Optional sign-in with a Wikimedia account (OAuth 2.0, PKCE or client secret)
 * 🔗 Extracts all reference URLs from the item's statements
 * ⚡ Checks if the referenced URLs are reachable (alive or dead)
 * ❌ Flags dead links and shows which statement they belong to
@@ -18,7 +20,9 @@ This tool checks the external reference URLs on a Wikidata item (QID) to determi
 
 ## 🧪 Live Demo
 
-Coming soon — for now, run locally 👇
+The current `main` branch runs on Toolforge:
+
+**https://wikidata-reference-validator.toolforge.org**
 
 ---
 
@@ -127,6 +131,188 @@ python app.py
 
 Open your browser and go to:
 👉 http://127.0.0.1:5000
+
+Sign-in is optional and needs the settings described in
+[Sign in with Wikimedia](#-sign-in-with-wikimedia-oauth-20); everything else
+works without it.
+
+### 5. Run the tests
+
+```bash
+python -m unittest discover -s tests -t . -v
+```
+
+`python -m unittest` also works from the project root.
+
+---
+
+## 🔐 Sign in with Wikimedia (OAuth 2.0)
+
+Signing in is **optional** — searching and validating work without an account.
+When configured, users can log in with their Wikimedia account from the
+**Log in** link in the header.
+
+This app uses the OAuth 2.0 authorization-code flow against
+`meta.wikimedia.org`. It only reads the basic profile (`username`, `sub`,
+`editcount`, `groups`, `blocked`); it never sees a password and never edits
+anything on the user's behalf.
+
+### 1. Configure the environment
+
+Copy `.env.example` to `.env` and fill in the values:
+
+```bash
+cp .env.example .env
+```
+
+```dotenv
+SECRET_KEY=<long random string>
+WIKIMEDIA_CLIENT_ID=a7d62252493d736604d7219ca46e4f05
+WIKIMEDIA_CLIENT_SECRET=         # required for this consumer
+WIKIMEDIA_USE_PKCE=false         # only for consumers registered without a secret
+WIKIMEDIA_REDIRECT_URI=http://127.0.0.1:5000/login/callback
+SESSION_COOKIE_SECURE=false
+```
+
+`SECRET_KEY` signs the session cookie that holds the OAuth state. Generate one with:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+### 2. Register the callback URL
+
+Wikimedia only redirects to the callback URL that is **registered for the
+consumer** (exact match; prefix matching is disabled), so the two must be
+identical.
+
+The consumer for this project is registered with:
+
+```
+https://wikidata-reference-validator.toolforge.org/login/callback
+```
+
+That is the value to use on the Toolforge deployment:
+
+```dotenv
+WIKIMEDIA_REDIRECT_URI=https://wikidata-reference-validator.toolforge.org/login/callback
+```
+
+For local development, either deploy to Toolforge or register a separate
+consumer whose callback is `http://127.0.0.1:5000/login/callback` (use
+“Create new app based on this” on the consumer page, then put that consumer's
+key and secret in your local `.env`). The app serves both `/login/callback`
+and `/oauth/callback`, but the URL must match the registration exactly.
+
+### 3. Client secret vs. PKCE
+
+Wikimedia has two kinds of OAuth 2.0 consumers:
+
+* **Confidential client (default):** the consumer has a client secret. Set
+  `WIKIMEDIA_CLIENT_SECRET` to that value; the app authenticates to the token
+  endpoint with HTTP Basic auth. A secret is shown when you register the
+  consumer — if it was lost, reset it from the same page. **The consumer
+  registered for this project is confidential**, so this is the mode to use.
+* **Public client:** the consumer was registered *without* a secret. Leave
+  `WIKIMEDIA_CLIENT_SECRET` empty and set `WIKIMEDIA_USE_PKCE=true`; the app
+  then sends a PKCE (S256) challenge and verifier.
+
+PKCE is opt-in because a confidential consumer rejects code exchanges that
+omit its secret, and the app cannot detect which kind a consumer is up front.
+Without a secret and without `WIKIMEDIA_USE_PKCE`, the login page explains that
+sign-in is not configured instead of sending users into a flow that would fail.
+
+Client IDs are public and safe to commit. Never commit `.env` or a client
+secret — both are git-ignored.
+
+### Routes
+
+| Route | Purpose |
+| --- | --- |
+| `GET /login` | Sign-in page (shows an error notice when something fails) |
+| `GET /oauth/login` | Starts the flow and redirects to Wikimedia |
+| `GET /login/callback` | Exchanges the code, reads the profile, signs the user in (`/oauth/callback` is kept as an alias) |
+| `POST /logout` | Clears the session |
+
+---
+
+## 🚀 Deploying to Toolforge
+
+The tool runs as a `python3.13` webservice. Toolforge's uwsgi runner loads
+`www/python/src/app.py` using the virtualenv in `www/python/venv`, so a deploy
+is "sync the tracked files, install requirements, restart".
+
+Configuration is stored as Toolforge environment variables, not a `.env` file:
+
+```bash
+toolforge envvars create SECRET_KEY "<64 hex chars>"
+toolforge envvars create WIKIMEDIA_CLIENT_ID "a7d62252493d736604d7219ca46e4f05"
+toolforge envvars create WIKIMEDIA_CLIENT_SECRET "<client secret>"
+toolforge envvars create WIKIMEDIA_REDIRECT_URI "https://wikidata-reference-validator.toolforge.org/login/callback"
+toolforge envvars create SESSION_COOKIE_SECURE "true"
+```
+
+Deploy the latest `main`:
+
+```bash
+ssh <your-toolforge-user>@login.toolforge.org
+become wikidata-reference-validator
+cd "$HOME/www/python"
+cp -a src src.bak-$(date +%Y%m%d)          # keep one rollback copy
+rm -rf /tmp/deploy
+git clone --depth 1 https://github.com/JosefAnthony/Wikidata-Reference-Validator-Hackathon2026.git /tmp/deploy
+find src -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+tar -C /tmp/deploy --exclude=.git -cf - . | tar -C src -xf -
+cp /tmp/deploy/deploy/uwsgi.ini uwsgi.ini  # request-header buffer, see below
+venv/bin/pip install -r src/requirements.txt
+toolforge webservice restart
+```
+
+`deploy/uwsgi.ini` raises uwsgi's request-header buffer. The runner picks up
+`www/python/uwsgi.ini` automatically, and without it the OAuth callback fails:
+Wikimedia's authorization code is ~750 characters and the ingress forwards the
+whole URI as `X-Original-URI`, which overflows the 4 KiB default and makes
+uwsgi drop the request (the browser shows *"upstream connect error or
+disconnect/reset before headers"*).
+
+Then check the result:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' https://wikidata-reference-validator.toolforge.org/login
+tail -20 "$HOME/uwsgi.log"
+```
+
+A few notes:
+
+* `src/` must be emptied before extracting, otherwise files removed upstream
+  (like the old logo) stay behind and keep being served.
+* The bastion's NFS view can lag behind the running pod. If the old build is
+  still served after a restart, apply the same steps inside the pod with
+  `kubectl exec` (`--chdir` in the uwsgi command shows the directory in use).
+* To roll back: `rm -rf src && mv src.bak-<date> src`, then restart.
+
+---
+
+## 🔁 Mirroring to GitLab
+
+The tool was originally built from
+[GitLab](https://gitlab.wikimedia.org/josefanthony/wikidata-reference-validator-app).
+That repository's `main` is an older snapshot, and the two histories only share
+their first commit, so GitHub is the source of truth. GitLab is updated through
+the `redesign-2026` branch:
+
+```bash
+git fetch gitlab
+git switch gitlab-sync
+git merge main                                   # pick up new work
+git merge -s ours gitlab/main -m "Merge GitLab main, keeping this tree"
+git push gitlab gitlab-sync:redesign-2026
+```
+
+`gitlab-sync` exists only to make the merge request fast-forward: it carries
+this tree plus GitLab's history. The second `merge` is a no-op unless GitLab
+`main` has gained commits since the last sync. Nothing is ever pushed from
+`gitlab-sync` to GitHub.
 
 ---
 

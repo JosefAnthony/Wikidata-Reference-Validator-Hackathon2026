@@ -14,6 +14,9 @@
         <strong>Find an item.</strong> Start typing a name on the <a href="{{ url_for('home') }}">home page</a>
         and choose an item with the mouse or with <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>Enter</kbd>.
         You can also paste a QID such as <code>Q42</code>. Press <kbd>/</kbd> anywhere to jump to the search box.
+        Use the <strong>Display language</strong> picker inside the search box to search and label items in
+        another language; labels missing in that language fall back to English, then to Wikidata's
+        language-neutral term.
       </li>
       <li>
         <strong>Let it check.</strong> The tool requests every reference URL on the item's statements.
@@ -32,8 +35,8 @@
         to open that statement on Wikidata, then update the reference or add the archived copy.
       </li>
       <li>
-        <strong>Share it.</strong> Every result has its own link (for example <code>/?item=Q42</code>),
-        so you can send a check to other editors.
+        <strong>Share it.</strong> Every result has its own link (for example <code>/?item=Q42</code>, or
+        <code>/?item=Q42&amp;lang=fr</code> to keep the display language), so you can send a check to other editors.
       </li>
     </ol>
 

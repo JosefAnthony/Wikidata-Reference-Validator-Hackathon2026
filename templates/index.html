@@ -6,11 +6,11 @@
 <section class="hero" id="searchSection" aria-labelledby="heroTitle">
   <div class="hero__glow" aria-hidden="true"></div>
 
-  <img class="hero__logo" src="{{ url_for('static', filename='wikidata-logo.svg') }}" alt="Wikidata logo" width="78" height="48">
+  <img class="hero__logo" src="{{ url_for('static', filename='app-icon.png') }}" alt="Wikidata Reference Validator" width="66" height="64">
   <h1 class="hero__title" id="heroTitle">
     <span><span class="hero__title-accent">Wikidata</span> Reference Validator</span>
   </h1>
-  <p class="hero__lead">Find dead links in Wikidata references, and the archived copies that can replace them.</p>
+  <p class="hero__lead">Find and Fix Broken Wikidata References</p>
 
   <form class="search" id="searchForm" role="search" autocomplete="off">
     <label class="visually-hidden" for="search">Wikidata item name or QID</label>
@@ -35,6 +35,19 @@
               title="Search by voice" hidden>
         <i class="bi bi-mic" aria-hidden="true"></i>
       </button>
+
+      <div class="lang">
+        <i class="bi bi-translate lang__icon" aria-hidden="true"></i>
+        <span class="lang__value" data-language-value aria-hidden="true">English</span>
+        <span class="lang__code" data-language-code aria-hidden="true">EN</span>
+        <select id="language" class="lang__select" aria-label="Display language for search and labels">
+          {% for code, name in languages %}
+            <option value="{{ code }}"{% if code == default_language %} selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+        <i class="bi bi-chevron-down lang__caret" aria-hidden="true"></i>
+      </div>
+
       <button type="submit" class="search__submit" id="validateBtn" aria-label="Validate references">
         <i class="bi bi-arrow-up" aria-hidden="true"></i>
       </button>
@@ -42,13 +55,6 @@
     <ul id="suggestions" class="suggestions" role="listbox" aria-label="Matching Wikidata items" hidden></ul>
     <p class="voice-status" id="voiceStatus" role="status" aria-live="polite" hidden></p>
   </form>
-
-  <div class="hero__examples" aria-label="Example items">
-    <button type="button" class="chip" data-example-qid="Q42" data-example-label="Douglas Adams">Douglas Adams</button>
-    <button type="button" class="chip" data-example-qid="Q7186" data-example-label="Marie Curie">Marie Curie</button>
-    <button type="button" class="chip" data-example-qid="Q8673" data-example-label="Lagos">Lagos</button>
-    <button type="button" class="chip" data-example-qid="Q28865" data-example-label="Python">Python</button>
-  </div>
 
   <p class="hero__meta">
     <span>Live link checks</span><span class="sep">·</span>

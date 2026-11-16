@@ -1,6 +1,4 @@
 Flask
 requests
 aiohttp
-requests-oauthlib
 python-dotenv
-PyJWT

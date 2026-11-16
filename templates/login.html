@@ -20,33 +20,34 @@
     </div>
     {% endif %}
 
-    {% if wikimedia_enabled %}
-    <form class="auth__form" action="{{ url_for('oauth_login') }}" method="get">
+    {% if oauth_configured %}
+    <form class="auth__form" action="{{ url_for('oauth_login', next=next) }}" method="get">
       <button type="submit" class="btn-solid auth__submit" data-loading-label="Redirecting to Wikimedia…">
         <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
-        <span>Log in with Wikimedia</span>
+        <span>Sign in with Wikimedia</span>
       </button>
     </form>
     <p class="auth__hint">
       You will be redirected to Wikimedia to authorize this app. Your password
       is never shared with us.
     </p>
+    <p class="auth__back">
+      <a href="{{ url_for('home') }}">← Continue without an account</a>
+    </p>
     {% else %}
     <button type="button" class="btn-solid auth__submit" disabled>
       <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
-      <span>Log in with Wikimedia</span>
+      <span>Sign-in unavailable</span>
     </button>
     <p class="auth__hint auth__hint--warning">
-      Wikimedia sign-in is not configured. Add
-      <code>WIKIMEDIA_CONSUMER_KEY</code> and
-      <code>WIKIMEDIA_CONSUMER_SECRET</code> to your environment or
-      <code>.env</code> file.
+      Wikimedia sign-in is not configured on this server. Set
+      <code>WIKIMEDIA_CLIENT_SECRET</code> (for example in a <code>.env</code>
+      file) to enable it.
     </p>
-    {% endif %}
-
     <p class="auth__back">
       <a href="{{ url_for('home') }}">← Back to the validator</a>
     </p>
+    {% endif %}
   </div>
 </section>
 {% endblock %}

@@ -5,6 +5,7 @@ const els = {
   form: document.getElementById("searchForm"),
   input: document.getElementById("search"),
   clear: document.getElementById("searchClear"),
+  language: document.getElementById("language"),
   suggestions: document.getElementById("suggestions"),
   result: document.getElementById("result"),
 };
@@ -19,6 +20,56 @@ const state = {
 };
 
 const QID_PATTERN = /^[Qq]\d+$/;
+
+/**************************************
+ * DISPLAY LANGUAGE
+ **************************************/
+const LANGUAGE_STORAGE_KEY = "displayLanguage";
+
+/** Language currently chosen in the picker (the template guarantees a valid code). */
+function currentLanguage() {
+  return els.language?.value || "en";
+}
+
+/** Select a language if the picker offers it. Returns whether it applied. */
+function setLanguage(code) {
+  if (!els.language || !code) return false;
+  if (![...els.language.options].some(option => option.value === code)) return false;
+  els.language.value = code;
+  syncLanguageLabel();
+  return true;
+}
+
+/** Mirror the selected option into the visible pill text. */
+function syncLanguageLabel() {
+  const option = els.language?.options[els.language.selectedIndex];
+  const name = option ? option.text : "English";
+  const code = option ? option.value.toUpperCase() : "EN";
+  document.querySelectorAll("[data-language-value]").forEach(el => { el.textContent = name; });
+  document.querySelectorAll("[data-language-code]").forEach(el => { el.textContent = code; });
+}
+
+function rememberLanguage(code) {
+  try { localStorage.setItem(LANGUAGE_STORAGE_KEY, code); } catch { /* storage unavailable */ }
+}
+
+function storedLanguage() {
+  try { return localStorage.getItem(LANGUAGE_STORAGE_KEY); } catch { return null; }
+}
+
+function languageFromUrl() {
+  return new URLSearchParams(window.location.search).get("lang");
+}
+
+/** Result URL that keeps the chosen language when it is not the default. */
+function reportUrl(qid) {
+  const params = new URLSearchParams({ item: qid });
+  if (currentLanguage() !== "en") params.set("lang", currentLanguage());
+  return `${window.location.pathname}?${params}`;
+}
+
+// Restore the language used last time (a ?lang= link still takes priority below).
+setLanguage(storedLanguage());
 
 // Shorter placeholder on small screens so it isn't cut off mid-word.
 const PLACEHOLDERS = { wide: els.input.placeholder, narrow: "Name or QID" };
@@ -85,11 +136,14 @@ function showSuggestionsLoading() {
 
 const fetchSuggestions = async query => {
   const requestId = ++state.searchRequestId;
+  const language = currentLanguage();
   try {
-    const response = await fetch(`/search?q=${encodeURIComponent(query)}`);
+    const params = new URLSearchParams({ q: query, language });
+    const response = await fetch(`/search?${params}`);
+    if (!response.ok) throw new Error(`Search request failed (HTTP ${response.status})`);
     const data = await response.json();
-    // Ignore responses that arrive after a newer query was typed.
-    if (requestId !== state.searchRequestId) return;
+    // Ignore responses that arrive after a newer query or language was picked.
+    if (requestId !== state.searchRequestId || language !== currentLanguage()) return;
     state.suggestions = Array.isArray(data) ? data : [];
     state.activeIndex = -1;
     renderSuggestions();
@@ -175,13 +229,26 @@ els.form.addEventListener("submit", e => {
   }
 });
 
-document.querySelectorAll("[data-example-qid]").forEach(btn => {
-  btn.addEventListener("click", () => {
-    els.input.value = btn.dataset.exampleLabel;
-    els.clear.hidden = false;
-    state.selected = { qid: btn.dataset.exampleQid, label: btn.dataset.exampleLabel };
-    validate(state.selected.qid, state.selected.label);
-  });
+els.language?.addEventListener("change", () => {
+  const language = currentLanguage();
+  rememberLanguage(language);
+  syncLanguageLabel();
+
+  // Keep a shared "?item=..." URL in sync with the chosen language.
+  if (state.report && itemFromUrl()) {
+    history.replaceState({ qid: state.report.qid }, "", reportUrl(state.report.qid));
+  }
+
+  // Refresh an open suggestion list in the new language.
+  const query = els.input.value.trim();
+  if (!els.suggestions.hidden && query.length >= 2) fetchSuggestions(query);
+
+  // Labels in a visible report depend on the language, so check the item again.
+  if (state.report) {
+    const name = els.language.options[els.language.selectedIndex]?.text || language;
+    toast(`Re-checking with labels in ${name}…`);
+    validate(state.report.qid, state.report.label, { updateHistory: false });
+  }
 });
 
 /**************************************
@@ -244,7 +311,7 @@ async function validate(qid, label, { updateHistory = true } = {}) {
     const response = await fetch("/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ qid, query: qid ? "" : label }),
+      body: JSON.stringify({ qid, query: qid ? "" : label, language: currentLanguage() }),
     });
 
     let data;
@@ -261,7 +328,7 @@ async function validate(qid, label, { updateHistory = true } = {}) {
     }
 
     if (updateHistory && data.qid) {
-      const url = `${window.location.pathname}?item=${encodeURIComponent(data.qid)}`;
+      const url = reportUrl(data.qid);
       history.pushState({ qid: data.qid, label: data.label }, "", url);
     }
     if (data.label) {
@@ -297,6 +364,7 @@ function saveReport(report) {
       qid: report.qid,
       label: report.label,
       description: report.description,
+      language: report.language || currentLanguage(),
       aliveCount: refs.filter(r => r.status === "alive").length,
       deadCount: refs.filter(r => r.status === "dead").length,
       references: refs,
@@ -1115,6 +1183,8 @@ function itemFromUrl() {
 }
 
 window.addEventListener("popstate", () => {
+  const language = languageFromUrl();
+  if (language) setLanguage(language);
   const qid = itemFromUrl();
   if (qid) {
     els.input.value = qid;
@@ -1124,8 +1194,11 @@ window.addEventListener("popstate", () => {
   }
 });
 
-// Open a shared link like /?item=Q42 directly.
+// Open a shared link like /?item=Q42&lang=fr directly.
 (function initFromUrl() {
+  const language = languageFromUrl();
+  if (setLanguage(language)) rememberLanguage(language);
+
   const qid = itemFromUrl();
   if (qid) {
     els.input.value = qid;
