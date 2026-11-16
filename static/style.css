@@ -302,3 +302,7 @@ body {
   }
 }
 
+#search.is-invalid {
+  border: 2px solid #dc3545;
+}
+

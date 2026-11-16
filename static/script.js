@@ -100,12 +100,22 @@ async function getPropertyLabel(pid) {
 /**************************************
  * VALIDATE REFERENCES (FIXED + SAFE)
  **************************************/
+function showInputWarning(input, resultDiv, message) {
+  resultDiv.innerHTML = `
+    <div class="alert alert-warning" role="alert">
+      <i class="bi bi-exclamation-triangle"></i>
+      ${message}
+    </div>`;
+  input.classList.add("is-invalid");
+  input.focus();
+}
+
 async function validate() {
-  const input = document.getElementById("search");
-  const qid = input.getAttribute("data-qid");
-  const label = input.getAttribute("data-label") || input.value;
-  const resultDiv = document.getElementById("result");
-  const searchSection = document.getElementById("searchSection");
+  //const input = document.getElementById("search");
+  //const qid = input.getAttribute("data-qid");
+  //const label = input.getAttribute("data-label") || input.value;
+  //const resultDiv = document.getElementById("result");
+  //const searchSection = document.getElementById("searchSection");
 
   // if (!qid && !label) {
   //   resultDiv.innerHTML = `
@@ -115,6 +125,30 @@ async function validate() {
   //     </div>`;
   //   return;
   // }
+
+  const input = document.getElementById("search");
+  const resultDiv = document.getElementById("result");
+  const searchSection = document.getElementById("searchSection");
+
+  const typed = input.value.trim();
+
+  // Ignore stale data attributes when the field has been cleared
+  const qid = typed ? input.getAttribute("data-qid") : null;
+  const label = typed ? (input.getAttribute("data-label") || typed) : "";
+
+  input.classList.remove("is-invalid");
+
+  // Guard 1: nothing entered
+  if (!qid && !label) {
+    showInputWarning(input, resultDiv, "Please type a label or select an item first.");
+    return;
+  }
+
+  // Guard 2: text typed but no item selected (backend needs a QID)
+  if (!qid) {
+    showInputWarning(input, resultDiv, "Please select an item from the suggestions list.");
+    return;
+  }
 
   searchSection.style.display = "none";
 
@@ -350,3 +384,10 @@ function resetSearch() {
   document.getElementById("result").innerHTML = "";
   searchSection.style.display = "block";
 }
+
+
+document.getElementById("search").addEventListener("input", (e) => {
+  e.target.classList.remove("is-invalid");
+  e.target.removeAttribute("data-qid");
+  e.target.removeAttribute("data-label");
+});
