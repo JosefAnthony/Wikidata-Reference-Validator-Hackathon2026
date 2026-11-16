@@ -55,6 +55,7 @@ class LanguageHelpersTests(unittest.TestCase):
 
 class SearchTests(unittest.TestCase):
     def setUp(self):
+        app.clear_caches()
         app.app.config["TESTING"] = True
         self.client = app.app.test_client()
 
@@ -119,6 +120,9 @@ class SearchTests(unittest.TestCase):
 
 
 class LabelFetchTests(unittest.TestCase):
+    def setUp(self):
+        app.clear_caches()
+
     @patch("app.requests.get")
     def test_fetch_labels_requests_fallback_chain(self, get):
         get.return_value = FakeResponse({
@@ -139,6 +143,7 @@ class LabelFetchTests(unittest.TestCase):
 
 class ValidateTests(unittest.TestCase):
     def setUp(self):
+        app.clear_caches()
         app.app.config["TESTING"] = True
         self.client = app.app.test_client()
 

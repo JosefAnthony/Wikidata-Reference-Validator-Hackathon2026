@@ -106,6 +106,65 @@ python -m unittest discover -s tests -t . -v
 
 ---
 
+## ⚡ Caching
+
+To avoid asking Wikidata and the Internet Archive the same question again and
+again, the app keeps recent answers in memory for a while.
+
+| What is cached | Kept for | Setting |
+| --- | --- | --- |
+| Autocomplete search results (per search text and language) | 10 minutes | `CACHE_TTL_SEARCH` |
+| Item and property labels (per ID and language) | 1 hour | `CACHE_TTL_LABELS` |
+| Wayback Machine snapshot found for a dead URL | 6 hours | `CACHE_TTL_WAYBACK` |
+| Wayback Machine said "no snapshot" for a dead URL | 1 hour | `CACHE_TTL_WAYBACK_MISS` |
+
+* **Expiry:** once an entry is older than its time limit, the next request
+  fetches it again and the fresh answer is cached.
+* **Size limit:** each cache holds at most **500 entries**
+  (`CACHE_MAX_ENTRIES`); when it is full, the least recently used entry is
+  dropped.
+* **Only good answers are cached.** If Wikidata or the Wayback Machine fails
+  or times out, nothing is stored and the next request tries again.
+* **Not cached:** the item's statements and the alive/dead check of each
+  reference URL. Validation always shows the current state, so you can fix a
+  reference and check the item again straight away.
+
+### Bypassing the cache
+
+Add `refresh=1` to skip cached answers. The fresh answers replace the cached
+ones.
+
+```bash
+# Fresh autocomplete results
+curl "http://127.0.0.1:5000/search?q=Douglas%20Adams&refresh=1"
+
+# Validate with fresh labels and Wayback lookups
+curl -X POST "http://127.0.0.1:5000/validate?refresh=1" \
+     -H "Content-Type: application/json" -d '{"qid": "Q42"}'
+```
+
+For `/validate`, `"refresh": true` in the JSON body works too. Restarting the
+app also empties the cache.
+
+### Settings
+
+All settings are optional environment variables (they can go in `.env`), in
+seconds except `CACHE_MAX_ENTRIES`. Setting a time to `0` turns that cache
+off, which can be handy while debugging.
+
+```dotenv
+CACHE_TTL_SEARCH=600
+CACHE_TTL_LABELS=3600
+CACHE_TTL_WAYBACK=21600
+CACHE_TTL_WAYBACK_MISS=3600
+CACHE_MAX_ENTRIES=500
+```
+
+The cache lives in the memory of each app process. On Toolforge, every worker
+has its own cache, and it is empty again after a restart or redeploy.
+
+---
+
 ## 🔐 Sign in with Wikimedia (OAuth 2.0)
 
 Signing in is **optional** — searching and validating work without an account.

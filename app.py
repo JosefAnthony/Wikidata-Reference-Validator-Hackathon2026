@@ -3,6 +3,9 @@ import hashlib
 import os
 import re
 import secrets
+import threading
+import time
+from collections import OrderedDict
 from datetime import timedelta
 from urllib.parse import urlencode, urlparse
 
@@ -88,6 +91,96 @@ def language_fallbacks(language):
 @app.context_processor
 def inject_languages():
     return {"languages": SUPPORTED_LANGUAGES, "default_language": DEFAULT_LANGUAGE}
+
+
+# ---------------------------------------------------
+# CACHING
+# ---------------------------------------------------
+# Search results, labels and Wayback lookups are requested again and again
+# (every keystroke, every validation), so keep recent answers in memory for a
+# while instead of asking Wikidata and the Internet Archive each time. The
+# item itself and the alive/dead URL checks are deliberately NOT cached:
+# editors fix a reference and validate again expecting the current state.
+
+MISSING = object()  # sentinel: "not in the cache" (None is a valid cached value)
+
+
+def _env_int(name, default):
+    """Read a non-negative integer setting from the environment."""
+    try:
+        value = int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+    return value if value >= 0 else default
+
+
+class TTLCache:
+    """
+    Thread-safe in-memory cache whose entries expire after `ttl` seconds.
+
+    It holds at most `maxsize` entries; when full, the least recently used
+    entry is dropped. A ttl of 0 disables the cache.
+    """
+
+    def __init__(self, ttl, maxsize=500):
+        self.ttl = ttl
+        self.maxsize = maxsize
+        self._data = OrderedDict()  # key -> (expires_at, value)
+        self._lock = threading.Lock()
+
+    def get(self, key):
+        with self._lock:
+            entry = self._data.get(key)
+            if entry is None:
+                return MISSING
+            expires_at, value = entry
+            if time.monotonic() >= expires_at:
+                # Expired: forget it so the caller fetches a fresh value.
+                del self._data[key]
+                return MISSING
+            self._data.move_to_end(key)
+            return value
+
+    def set(self, key, value, ttl=None):
+        ttl = self.ttl if ttl is None else ttl
+        if ttl <= 0 or self.maxsize <= 0:
+            return
+        with self._lock:
+            self._data[key] = (time.monotonic() + ttl, value)
+            self._data.move_to_end(key)
+            while len(self._data) > self.maxsize:
+                self._data.popitem(last=False)
+
+    def clear(self):
+        with self._lock:
+            self._data.clear()
+
+    def __len__(self):
+        with self._lock:
+            return len(self._data)
+
+
+CACHE_MAX_ENTRIES = _env_int("CACHE_MAX_ENTRIES", 500)
+SEARCH_CACHE = TTLCache(_env_int("CACHE_TTL_SEARCH", 10 * 60), CACHE_MAX_ENTRIES)
+LABEL_CACHE = TTLCache(_env_int("CACHE_TTL_LABELS", 60 * 60), CACHE_MAX_ENTRIES)
+WAYBACK_CACHE = TTLCache(_env_int("CACHE_TTL_WAYBACK", 6 * 60 * 60), CACHE_MAX_ENTRIES)
+# "No snapshot found" is kept for less time, so a page archived since then
+# shows up sooner.
+WAYBACK_MISS_TTL = _env_int("CACHE_TTL_WAYBACK_MISS", 60 * 60)
+
+
+def clear_caches():
+    for cache in (SEARCH_CACHE, LABEL_CACHE, WAYBACK_CACHE):
+        cache.clear()
+
+
+def wants_refresh():
+    """True when the request asks to bypass the cache (?refresh=1, or "refresh": true in a JSON body)."""
+    flag = request.args.get("refresh")
+    if flag is None:
+        body = request.get_json(silent=True)
+        flag = body.get("refresh") if isinstance(body, dict) else None
+    return str(flag).strip().lower() in {"1", "true", "yes"}
 
 
 # ---------------------------------------------------
@@ -401,6 +494,13 @@ def search():
         return jsonify([])
 
     language = normalize_language(request.args.get("language"))
+    refresh = wants_refresh()
+    cache_key = (" ".join(query.split()).casefold(), language)
+    if not refresh:
+        cached = SEARCH_CACHE.get(cache_key)
+        if cached is not MISSING:
+            return jsonify(cached)
+
     params = {
         "action": "wbsearchentities",
         "search": query,
@@ -425,7 +525,9 @@ def search():
     # wbsearchentities only returns a label when one exists in the requested
     # language, so fill the gaps from the fallback chain.
     missing_labels = {item.get("id") for item in items if item.get("id") and not item.get("label")}
-    fallback_labels = fetch_labels(missing_labels, language) if missing_labels else {}
+    fallback_labels, labels_complete = (
+        _fetch_labels(missing_labels, language, refresh) if missing_labels else ({}, True)
+    )
 
     results = []
     for item in items:
@@ -436,6 +538,9 @@ def search():
             "description": item.get("description", "")
         })
 
+    # Only keep complete answers: if a label lookup failed, try again next time.
+    if labels_complete:
+        SEARCH_CACHE.set(cache_key, results)
     return jsonify(results)
 
 
@@ -491,11 +596,19 @@ async def check_url(session, semaphore, url):
             return {"url": url, "status": "dead", "httpStatus": None, "error": str(e)}
 
 
-async def fetch_wayback_snapshot_async(session, semaphore, url):
+async def fetch_wayback_snapshot_async(session, semaphore, url, refresh=False):
     """
     Fetch latest available Wayback Machine snapshot for a dead URL asynchronously.
-    Returns None if no archive exists.
+    Returns None if no archive exists or the lookup failed.
+
+    Answers are cached (a missing snapshot for less time); failed lookups are
+    not, so they are retried on the next validation.
     """
+    if not refresh:
+        cached = WAYBACK_CACHE.get(url)
+        if cached is not MISSING:
+            return cached
+
     async with semaphore:
         try:
             timeout = aiohttp.ClientTimeout(total=8)
@@ -503,16 +616,26 @@ async def fetch_wayback_snapshot_async(session, semaphore, url):
                 if resp.status != 200:
                     return None
                 data = await resp.json()
-                snapshot = data.get("archived_snapshots", {}).get("closest")
-                if snapshot and snapshot.get("available"):
-                    return {
-                        "archiveUrl": snapshot.get("url"),
-                        "timestamp": snapshot.get("timestamp"),
-                        "status": snapshot.get("status")
-                    }
         except Exception as e:
             print(f"[Wayback] Failed for {url}: {e}")
-        return None
+            return None
+
+    snapshots = data.get("archived_snapshots") if isinstance(data, dict) else None
+    if not isinstance(snapshots, dict):
+        return None  # unexpected answer: treat as a failure, don't cache it
+
+    snapshot = snapshots.get("closest")
+    if isinstance(snapshot, dict) and snapshot.get("available"):
+        result = {
+            "archiveUrl": snapshot.get("url"),
+            "timestamp": snapshot.get("timestamp"),
+            "status": snapshot.get("status")
+        }
+        WAYBACK_CACHE.set(url, result)
+        return result
+
+    WAYBACK_CACHE.set(url, None, ttl=WAYBACK_MISS_TTL)
+    return None
 
 
 # ---------------------------------------------------
@@ -575,15 +698,35 @@ def pick_label(terms, fallback="", language=DEFAULT_LANGUAGE):
     return fallback
 
 
-def fetch_labels(ids, language=DEFAULT_LANGUAGE):
+def fetch_labels(ids, language=DEFAULT_LANGUAGE, refresh=False):
+    """Return {entity id: label} in the language's fallback chain; ids without a label are left out."""
+    return _fetch_labels(ids, language, refresh)[0]
+
+
+def _fetch_labels(ids, language=DEFAULT_LANGUAGE, refresh=False):
+    """
+    Like fetch_labels(), but also says whether every lookup succeeded.
+
+    Labels are cached per (id, language). Only the ids that are not cached
+    (or all of them, with refresh) are requested from Wikidata.
+    """
     labels = {}
     if not ids:
-        return labels
+        return labels, True
 
     language = normalize_language(language)
     languages = "|".join(language_fallbacks(language))
-    id_list = sorted(set(ids))
-    chunks = [id_list[i:i + 50] for i in range(0, len(id_list), 50)]
+
+    to_fetch = []
+    for eid in sorted(set(ids)):
+        cached = MISSING if refresh else LABEL_CACHE.get((eid, language))
+        if cached is MISSING:
+            to_fetch.append(eid)
+        elif cached:
+            labels[eid] = cached
+
+    complete = True
+    chunks = [to_fetch[i:i + 50] for i in range(0, len(to_fetch), 50)]
 
     for chunk in chunks:
         params = {
@@ -600,15 +743,19 @@ def fetch_labels(ids, language=DEFAULT_LANGUAGE):
             entities = r.json().get("entities", {})
 
             for eid, data in entities.items():
-                label = pick_label(data.get("labels") if isinstance(data, dict) else None,
-                                   language=language)
+                if not isinstance(data, dict):
+                    continue
+                label = pick_label(data.get("labels"), language=language)
                 if label:
                     labels[eid] = label
+                # Cache "no label" too ("" ), so it isn't requested every time.
+                LABEL_CACHE.set((eid, language), label or "")
 
         except Exception as e:
+            complete = False
             print(f"[Label fetch failed] {chunk}: {e}")
 
-    return labels
+    return labels, complete
 
 
 def resolve_qid_from_query(query_str, language=DEFAULT_LANGUAGE):
@@ -652,6 +799,7 @@ def validate_references():
         return jsonify({"error": "Please enter a Wikidata item name or QID (e.g., Q937)."}), 400
 
     language = normalize_language(data.get("language"))
+    refresh = wants_refresh()
 
     try:
         qid = resolve_qid_from_query(target_input, language)
@@ -725,14 +873,15 @@ def validate_references():
                 dead_urls = [u for u, info in status_map.items() if info["status"] == "dead"]
                 wayback_map = {}
                 if dead_urls:
-                    wb_tasks = [fetch_wayback_snapshot_async(session, semaphore, u) for u in dead_urls]
+                    wb_tasks = [fetch_wayback_snapshot_async(session, semaphore, u, refresh)
+                                for u in dead_urls]
                     wb_results = await asyncio.gather(*wb_tasks)
                     wayback_map = {u: wb for u, wb in zip(dead_urls, wb_results) if wb}
 
                 return status_map, wayback_map
 
         status_map, wayback_map = asyncio.run(run_checks())
-        labels = fetch_labels(all_ids_to_label, language)
+        labels = fetch_labels(all_ids_to_label, language, refresh)
 
         results = []
         for ref_data in refs_data:
