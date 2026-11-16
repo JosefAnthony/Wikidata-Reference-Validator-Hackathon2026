@@ -259,6 +259,27 @@ async function validate() {
       const icon = ref.status === "alive" ? "check-circle" : "x-octagon";
       const collapseId = `collapseRef${i}`;
 
+// Add event listener for copy button click      
+
+      document.addEventListener('click', async (event) => {
+        const btn = event.target.closest('#copyLinkBtn');
+        if (!btn) return;
+        const orginalText = btn.textContent;
+
+        try {
+          await navigator.clipboard.writeText(btn.dataset.url);
+          btn.textContent = 'Copied!';
+        } catch (err) {
+          console.error('Copy failed: ', err);
+          btn.textContent = 'Copy failed';
+        }
+
+        setTimeout(() => {
+          btn.textContent = orginalText;
+        }, 2000);
+
+      });
+
       html += `
         <li class="list-group-item p-3 rounded shadow-sm mb-2">
           <div class="d-flex justify-content-between align-items-center gap-2">
@@ -273,6 +294,12 @@ async function validate() {
                       data-bs-toggle="collapse"
                       data-bs-target="#${collapseId}">
                 Details
+              </button>
+              <button id="copyLinkBtn" class="btn btn-sm btn-outline-secondary"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#${ref.url}"
+                      data-url="${ref.url}">
+                Copy Link
               </button>
             </div>
           </div>
