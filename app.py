@@ -443,24 +443,52 @@ def search():
 # URL STATUS & WAYBACK CHECK (ASYNC + DEDUPLICATED)
 # ---------------------------------------------------
 
+def get_error_message(status_code):
+    """Return a short explanation for common HTTP status codes."""
+    if not status_code:
+        return None
+    messages = {
+        400: "Bad Request",
+        401: "Unauthorized",
+        403: "Forbidden",
+        404: "Not Found",
+        408: "Request Timeout",
+        429: "Too Many Requests",
+        500: "Internal Server Error",
+        502: "Bad Gateway",
+        503: "Service Unavailable",
+        504: "Gateway Timeout",
+    }
+    return messages.get(status_code, f"HTTP {status_code}")
+
+
 async def check_url(session, semaphore, url):
     async with semaphore:
         head_timeout = aiohttp.ClientTimeout(total=6)
         try:
             async with session.head(url, allow_redirects=True, timeout=head_timeout) as resp:
                 if resp.status < 400 or resp.status in (401, 403, 429):
-                    return {"url": url, "status": "alive", "httpStatus": resp.status}
-        except Exception:
-            pass
+                    return {"url": url, "status": "alive", "httpStatus": resp.status, "error": get_error_message(resp.status) if resp.status >= 400 else None}
+                return {"url": url, "status": "dead", "httpStatus": resp.status, "error": get_error_message(resp.status)}
+        except asyncio.TimeoutError:
+            return {"url": url, "status": "dead", "httpStatus": None, "error": "Timeout"}
+        except aiohttp.ClientConnectorError:
+            return {"url": url, "status": "dead", "httpStatus": None, "error": "DNS Error"}
+        except aiohttp.ClientError as e:
+            return {"url": url, "status": "dead", "httpStatus": None, "error": str(e)}
 
         get_timeout = aiohttp.ClientTimeout(total=10)
         try:
             async with session.get(url, allow_redirects=True, timeout=get_timeout) as resp:
                 if resp.status < 400 or resp.status in (401, 403, 429):
-                    return {"url": url, "status": "alive", "httpStatus": resp.status}
-                return {"url": url, "status": "dead", "httpStatus": resp.status}
-        except Exception:
-            return {"url": url, "status": "dead", "httpStatus": None}
+                    return {"url": url, "status": "alive", "httpStatus": resp.status, "error": get_error_message(resp.status) if resp.status >= 400 else None}
+                return {"url": url, "status": "dead", "httpStatus": resp.status, "error": get_error_message(resp.status)}
+        except asyncio.TimeoutError:
+            return {"url": url, "status": "dead", "httpStatus": None, "error": "Timeout"}
+        except aiohttp.ClientConnectorError:
+            return {"url": url, "status": "dead", "httpStatus": None, "error": "DNS Error"}
+        except aiohttp.ClientError as e:
+            return {"url": url, "status": "dead", "httpStatus": None, "error": str(e)}
 
 
 async def fetch_wayback_snapshot_async(session, semaphore, url):

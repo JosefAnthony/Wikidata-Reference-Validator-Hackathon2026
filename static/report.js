@@ -60,6 +60,8 @@
   document.getElementById("reportRows").innerHTML = sorted.map(r => {
     const meta = sourceCategoryMeta(r.sourceCategory);
     const isDead = r.status === "dead";
+    const http = r.httpStatus ? `HTTP ${r.httpStatus}` : isDead ? "No response" : "";
+    const error = r.error ? `${r.httpStatus ? " - " : ""}${r.error}` : "";
     return `
       <tr>
         <td data-label="Status"><span class="status-pill status-pill--${isDead ? "dead" : "alive"}">${isDead ? "Unreachable" : "Alive"}</span></td>
@@ -71,7 +73,8 @@
         </td>
         <td class="url-cell" data-label="URL"><a href="${escapeHtml(safeUrl(r.url))}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(r.url)}">${escapeHtml(r.url)}</a></td>
         <td data-label="Source"><span class="tag"><i class="bi ${meta.icon}"></i> ${meta.label}</span></td>
-        <td class="mono" data-label="HTTP">${r.httpStatus ? escapeHtml(r.httpStatus) : "—"}</td>
+        <td class="mono" data-label="HTTP">${http}</td>
+        <td data-label="Failure Reason">${isDead && error ? `<span style="color: var(--dead)">${escapeHtml(error)}</span>` : "—"}</td>
         <td data-label="Archive">${r.suggestedArchive
           ? `<a href="${escapeHtml(safeUrl(r.suggestedArchive.archiveUrl))}" target="_blank" rel="noopener noreferrer">${escapeHtml(formatArchiveDate(r.suggestedArchive.timestamp) || "Snapshot")}</a>`
           : `<span style="color: var(--text-faint)">—</span>`}</td>
