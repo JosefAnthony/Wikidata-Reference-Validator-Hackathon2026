@@ -167,4 +167,112 @@
   document.getElementById("downloadJson").addEventListener("click", () => {
     download(`${base}.json`, JSON.stringify(report, null, 2), "application/json");
   });
+
+  /* ---------- Excel (.xlsx) export ---------- */
+  function loadSheetJS() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[src*="xlsx"]');
+      if (existing) {
+        existing.addEventListener("load", () => resolve(window.XLSX));
+        existing.addEventListener("error", reject);
+        return;
+      }
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+      s.async = true;
+      s.onload = () => resolve(window.XLSX);
+      s.onerror = () => reject(new Error("Unable to load SheetJS library"));
+      document.head.appendChild(s);
+    });
+  }
+
+  const downloadCsvBtn = document.getElementById("downloadCsv");
+  let downloadExcelBtn = document.getElementById("downloadExcel");
+  if (!downloadExcelBtn && downloadCsvBtn) {
+    downloadExcelBtn = document.createElement("button");
+    downloadExcelBtn.type = "button";
+    downloadExcelBtn.className = "btn-ghost";
+    downloadExcelBtn.id = "downloadExcel";
+    downloadExcelBtn.innerHTML = '<i class="bi bi-filetype-xlsx"></i> Excel';
+    downloadCsvBtn.insertAdjacentElement("afterend", downloadExcelBtn);
+  }
+
+  if (downloadExcelBtn) {
+    downloadExcelBtn.addEventListener("click", async () => {
+      const originalHtml = downloadExcelBtn.innerHTML;
+      try {
+        downloadExcelBtn.disabled = true;
+        downloadExcelBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Exporting...';
+        const XLSX = await loadSheetJS();
+
+        const wb = XLSX.utils.book_new();
+
+        // 1. Summary sheet
+        const summaryData = [
+          ["Metric", "Value"],
+          ["Entity Label", report.label || ""],
+          ["QID", report.qid || ""],
+          ["Checked At", checked || report.checkedAt || ""],
+          ["Duration", report.duration != null ? `${report.duration}s` : ""],
+          ["Health Score", `${health}%`],
+          ["Total References", refs.length],
+          ["Alive References", alive],
+          ["Unreachable References", dead],
+          ["Archived Suggestions", archived],
+        ];
+        const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+        wsSummary["!cols"] = [{ wch: 24 }, { wch: 36 }];
+        XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
+
+        // 2. References sheet
+        const refHeaders = [
+          "Status",
+          "HTTP Status",
+          "Property ID",
+          "Property",
+          "Statement Value",
+          "URL",
+          "Domain",
+          "Source Category",
+          "Archive URL",
+          "Archive Date",
+        ];
+        const refRows = refs.map((r) => [
+          r.status ?? "",
+          r.httpStatus ?? "",
+          r.propertyId ?? "",
+          r.propertyLabel ?? "",
+          r.statementValue ?? "",
+          r.url ?? "",
+          r.domain ?? "",
+          r.sourceCategory ?? "",
+          r.suggestedArchive?.archiveUrl ?? "",
+          r.suggestedArchive?.timestamp ? (formatArchiveDate(r.suggestedArchive.timestamp) || r.suggestedArchive.timestamp) : "",
+        ]);
+        const wsRefs = XLSX.utils.aoa_to_sheet([refHeaders, ...refRows]);
+        wsRefs["!cols"] = [
+          { wch: 14 },
+          { wch: 12 },
+          { wch: 14 },
+          { wch: 24 },
+          { wch: 30 },
+          { wch: 45 },
+          { wch: 22 },
+          { wch: 18 },
+          { wch: 45 },
+          { wch: 20 },
+        ];
+        XLSX.utils.book_append_sheet(wb, wsRefs, "References");
+
+        XLSX.writeFile(wb, `${base}.xlsx`);
+      } catch (err) {
+        console.error("Excel export error:", err);
+        alert("Failed to export Excel file. Please verify network access to the CDN.");
+      } finally {
+        downloadExcelBtn.disabled = false;
+        downloadExcelBtn.innerHTML = originalHtml;
+      }
+    });
+  }
 })();
