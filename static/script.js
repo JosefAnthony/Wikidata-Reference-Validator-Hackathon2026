@@ -243,19 +243,69 @@ els.language?.addEventListener("change", () => {
   const query = els.input.value.trim();
   if (!els.suggestions.hidden && query.length >= 2) fetchSuggestions(query);
 
-  // Labels in a visible report depend on the language, so check the item again.
-  if (state.report) {
+  // Labels depend on the language, so check the item again: the one being
+  // checked right now if there is one, otherwise the report on screen.
+  const target = activeValidation || state.report;
+  if (target) {
     const name = els.language.options[els.language.selectedIndex]?.text || language;
     toast(`Re-checking with labels in ${name}…`);
-    validate(state.report.qid, state.report.label, { updateHistory: false });
+    validate(target.qid, target.label, activeValidation ? activeValidation.options : { updateHistory: false });
   }
 });
 
 /**************************************
  * VALIDATION
  **************************************/
-let elapsedTimer = null;
+// How long to wait for /validate before giving up. Items with many references
+// can legitimately take a minute or more, so keep this generous. Override it
+// without touching this file by adding data-validate-timeout="<milliseconds>"
+// to the search form in templates/index.html.
+const DEFAULT_VALIDATE_TIMEOUT_MS = 120_000;
+const VALIDATE_TIMEOUT_MS = (() => {
+  const configured = Number(els.form.dataset.validateTimeout);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_VALIDATE_TIMEOUT_MS;
+})();
 
+// The validation currently in flight, if any:
+// { key, qid, label, options, controller, timeoutId, elapsedId, timedOut }
+// Only one runs at a time; starting another aborts it ("latest wins").
+let activeValidation = null;
+
+/** "2 minutes", "90 seconds", ... */
+function formatDuration(ms) {
+  const seconds = Math.round(ms / 1000);
+  if (seconds >= 60 && seconds % 60 === 0) {
+    const minutes = seconds / 60;
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+  return `${seconds} second${seconds === 1 ? "" : "s"}`;
+}
+
+/** Identifies a request, so the same one isn't sent twice while it runs. */
+function validationKey(qid, label) {
+  const target = qid ? qid.toUpperCase() : `q:${(label || "").trim().toLowerCase()}`;
+  return `${target}|${currentLanguage()}`;
+}
+
+/** Stop the validation in flight (if any) without showing an error. */
+function cancelValidation() {
+  if (!activeValidation) return;
+  const run = activeValidation;
+  finishValidation(run);
+  run.controller.abort();
+}
+
+/** Clear this request's timers. Called for every outcome. */
+function finishValidation(run) {
+  clearTimeout(run.timeoutId);
+  clearInterval(run.elapsedId);
+  if (activeValidation === run) {
+    activeValidation = null;
+    els.form.removeAttribute("aria-busy");
+  }
+}
+
+/** Show the loading panel; returns the id of the interval that updates the elapsed time. */
 function showLoading(label) {
   document.body.classList.add("has-results");
   const start = Date.now();
@@ -267,6 +317,7 @@ function showLoading(label) {
           <p class="loading__title">Checking references for <strong>${escapeHtml(label)}</strong>&hellip;</p>
           <p class="loading__hint">
             <span id="elapsed">0s</span> elapsed &middot; items with many references can take up to a minute
+            &middot; stops after ${formatDuration(VALIDATE_TIMEOUT_MS)}
           </p>
         </div>
       </div>
@@ -279,10 +330,9 @@ function showLoading(label) {
       </div>
     </div>`;
 
-  clearInterval(elapsedTimer);
-  elapsedTimer = setInterval(() => {
-    const el = document.getElementById("elapsed");
-    if (el) el.textContent = `${Math.floor((Date.now() - start) / 1000)}s`;
+  const elapsed = document.getElementById("elapsed");
+  return setInterval(() => {
+    elapsed.textContent = `${Math.floor((Date.now() - start) / 1000)}s`;
   }, 1000);
 }
 
@@ -302,9 +352,28 @@ function showNotice(kind, message, { retry } = {}) {
   if (retry) els.result.querySelector('[data-action="retry"]').addEventListener("click", retry);
 }
 
-async function validate(qid, label, { updateHistory = true } = {}) {
+async function validate(qid, label, options = {}) {
+  const { updateHistory = true } = options;
+  const key = validationKey(qid, label);
+
+  // The same item in the same language is already being checked: ignore the
+  // repeat (double click, Enter pressed twice, ...).
+  if (activeValidation && activeValidation.key === key) return;
+
+  // A different item or language replaces the one in flight.
+  cancelValidation();
+
+  const run = { key, qid, label, options, controller: new AbortController(), timedOut: false };
+  activeValidation = run;
+  els.form.setAttribute("aria-busy", "true");
+
+  const retry = () => validate(qid, label, options);
   tts.stop();
-  showLoading(label || qid);
+  run.elapsedId = showLoading(label || qid);
+  run.timeoutId = setTimeout(() => {
+    run.timedOut = true;
+    run.controller.abort();
+  }, VALIDATE_TIMEOUT_MS);
   const start = Date.now();
 
   try {
@@ -312,18 +381,22 @@ async function validate(qid, label, { updateHistory = true } = {}) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ qid, query: qid ? "" : label, language: currentLanguage() }),
+      signal: run.controller.signal,
     });
 
     let data;
     try {
       data = await response.json();
-    } catch {
+    } catch (err) {
+      if (run.controller.signal.aborted) throw err; // timed out / cancelled while reading
       throw new Error(`The server returned an unexpected response (HTTP ${response.status}).`);
     }
+    // An answer that arrives just as the request was replaced must not be shown.
+    if (activeValidation !== run) return;
     const duration = Math.round((Date.now() - start) / 1000);
 
     if (data.error) {
-      showNotice("error", data.error, { retry: () => validate(qid, label) });
+      showNotice("error", data.error, { retry });
       return;
     }
 
@@ -351,9 +424,18 @@ async function validate(qid, label, { updateHistory = true } = {}) {
     saveReport(state.report);
     renderReport();
   } catch (err) {
-    showNotice("error", err.message || String(err), { retry: () => validate(qid, label) });
+    if (run.timedOut) {
+      showNotice("error",
+        `Checking references for ${label || qid} took longer than ${formatDuration(VALIDATE_TIMEOUT_MS)} ` +
+        "and was stopped. Items with many references can be slow, or the server may be busy. Please try again.",
+        { retry });
+    } else if (run.controller.signal.aborted) {
+      // Replaced by a newer request or cancelled by "New search": stay quiet.
+    } else {
+      showNotice("error", err.message || String(err), { retry });
+    }
   } finally {
-    clearInterval(elapsedTimer);
+    finishValidation(run);
   }
 }
 
@@ -565,11 +647,12 @@ function renderReference(ref) {
   const meta = sourceCategoryMeta(ref.sourceCategory);
   const statusLabel = isDead ? "Unreachable" : ref.status === "alive" ? "Alive" : ref.status;
   const http = ref.httpStatus ? `HTTP ${ref.httpStatus}` : isDead ? "No response" : "";
+  const error = ref.error ? `${ref.httpStatus ? " - " : ""}${ref.error}` : "";
   const archive = ref.suggestedArchive;
 
   return `
     <li class="ref ${isDead ? "ref--dead" : "ref--alive"}" data-ref="${state.report.references.indexOf(ref)}">
-      <span class="ref__status" title="${escapeHtml(statusLabel)}${http ? ` (${escapeHtml(http)})` : ""}">
+      <span class="ref__status" title="${escapeHtml(statusLabel)}${http ? ` (${escapeHtml(http)})` : ""}${error ? ` - ${escapeHtml(error)}` : ""}">
         <i class="bi ${isDead ? "bi-x-circle-fill" : "bi-check-circle-fill"}" aria-hidden="true"></i>
         <span class="visually-hidden">${escapeHtml(statusLabel)}</span>
       </span>
@@ -581,6 +664,7 @@ function renderReference(ref) {
           <span class="tag"><i class="bi ${meta.icon}"></i> ${meta.label}</span>
           ${ref.statementValue ? `<span class="ref__value" title="Statement value">${escapeHtml(ref.statementValue)}</span>` : ""}
           ${http ? `<span class="ref__http ${isDead ? "text-dead" : ""}">${escapeHtml(http)}</span>` : ""}
+          ${error ? `<span class="ref__error text-dead">${escapeHtml(error)}</span>` : ""}
         </div>
 
         ${isDead ? `
@@ -1164,7 +1248,7 @@ const tts = (() => {
  **************************************/
 function resetSearch({ updateHistory = true } = {}) {
   tts.stop();
-  clearInterval(elapsedTimer);
+  cancelValidation();
   state.report = null;
   state.selected = null;
   els.result.innerHTML = "";

@@ -60,6 +60,8 @@
   document.getElementById("reportRows").innerHTML = sorted.map(r => {
     const meta = sourceCategoryMeta(r.sourceCategory);
     const isDead = r.status === "dead";
+    const http = r.httpStatus ? `HTTP ${r.httpStatus}` : isDead ? "No response" : "";
+    const error = r.error ? `${r.httpStatus ? " - " : ""}${r.error}` : "";
     return `
       <tr>
         <td data-label="Status"><span class="status-pill status-pill--${isDead ? "dead" : "alive"}">${isDead ? "Unreachable" : "Alive"}</span></td>
@@ -71,7 +73,8 @@
         </td>
         <td class="url-cell" data-label="URL"><a href="${escapeHtml(safeUrl(r.url))}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(r.url)}">${escapeHtml(r.url)}</a></td>
         <td data-label="Source"><span class="tag"><i class="bi ${meta.icon}"></i> ${meta.label}</span></td>
-        <td class="mono" data-label="HTTP">${r.httpStatus ? escapeHtml(r.httpStatus) : "—"}</td>
+        <td class="mono" data-label="HTTP">${http}</td>
+        <td data-label="Failure Reason">${isDead && error ? `<span style="color: var(--dead)">${escapeHtml(error)}</span>` : "—"}</td>
         <td data-label="Archive">${r.suggestedArchive
           ? `<a href="${escapeHtml(safeUrl(r.suggestedArchive.archiveUrl))}" target="_blank" rel="noopener noreferrer">${escapeHtml(formatArchiveDate(r.suggestedArchive.timestamp) || "Snapshot")}</a>`
           : `<span style="color: var(--text-faint)">—</span>`}</td>
@@ -156,9 +159,9 @@
   const base = `references-${report.qid}`;
 
   document.getElementById("downloadCsv").addEventListener("click", () => {
-    const header = ["status", "http_status", "property_id", "property", "statement_value", "url", "domain", "source_category", "archive_url", "archive_timestamp"];
+    const header = ["status", "http_status", "failure_reason", "property_id", "property", "statement_value", "url", "domain", "source_category", "archive_url", "archive_timestamp"];
     const rows = refs.map(r => [
-      r.status, r.httpStatus, r.propertyId, r.propertyLabel, r.statementValue, r.url, r.domain,
+      r.status, r.httpStatus, r.error, r.propertyId, r.propertyLabel, r.statementValue, r.url, r.domain,
       r.sourceCategory, r.suggestedArchive?.archiveUrl, r.suggestedArchive?.timestamp,
     ].map(csvCell).join(","));
     download(`${base}.csv`, [header.join(","), ...rows].join("\n"), "text/csv;charset=utf-8");
@@ -229,6 +232,7 @@
         const refHeaders = [
           "Status",
           "HTTP Status",
+          "Failure Reason",
           "Property ID",
           "Property",
           "Statement Value",
@@ -241,6 +245,7 @@
         const refRows = refs.map((r) => [
           r.status ?? "",
           r.httpStatus ?? "",
+          r.error ?? "",
           r.propertyId ?? "",
           r.propertyLabel ?? "",
           r.statementValue ?? "",
@@ -254,6 +259,7 @@
         wsRefs["!cols"] = [
           { wch: 14 },
           { wch: 12 },
+          { wch: 28 },
           { wch: 14 },
           { wch: 24 },
           { wch: 30 },
