@@ -1,9 +1,12 @@
 import base64
 import hashlib
+import json
 import os
 import re
 import secrets
-from datetime import timedelta
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, urlparse
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
@@ -19,6 +22,48 @@ except ImportError:
     pass
 
 app = Flask(__name__)
+
+# History is stored locally in SQLite. It is keyed to the Wikimedia user ID
+# and never contains OAuth tokens or other credentials.
+HISTORY_DB_PATH = os.path.join(app.instance_path, "history.db")
+SEARCH_HISTORY_PAGE_SIZE = 10
+HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS search_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    qid TEXT NOT NULL,
+    label TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    total INTEGER NOT NULL DEFAULT 0,
+    alive INTEGER NOT NULL DEFAULT 0,
+    dead INTEGER NOT NULL DEFAULT 0,
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_search_history_user_created
+    ON search_history (user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS edit_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    qid TEXT NOT NULL,
+    label TEXT NOT NULL,
+    property_id TEXT NOT NULL DEFAULT '',
+    property_label TEXT NOT NULL DEFAULT '',
+    statement_value TEXT NOT NULL DEFAULT '',
+    original_url TEXT NOT NULL DEFAULT '',
+    new_url TEXT NOT NULL DEFAULT '',
+    before_json TEXT NOT NULL DEFAULT '[]',
+    change_json TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_edit_history_user_created
+    ON edit_history (user_id, created_at DESC);
+"""
 
 # Sessions hold the OAuth state and the signed-in user, so the key must be
 # stable across restarts. Set SECRET_KEY in the environment for real use.
@@ -372,6 +417,394 @@ def categorize_source(url):
 
 
 # ---------------------------------------------------
+# USER HISTORY
+# ---------------------------------------------------
+
+@contextmanager
+def _history_db():
+    """Yield a connection to the local SQLite history database."""
+    os.makedirs(app.instance_path, exist_ok=True)
+    conn = sqlite3.connect(HISTORY_DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.executescript(HISTORY_SCHEMA)
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
+def _history_user():
+    """Return the signed-in user as {id, name}, or None for anonymous visitors."""
+    user = session.get("user") or {}
+    user_id = user.get("id")
+    if user_id is None:
+        return None
+    return {
+        "id": str(user_id),
+        "name": str(user.get("username") or user.get("name") or ""),
+    }
+
+
+def _history_cutoff(*, minutes=0, hours=0):
+    return (
+        datetime.now(timezone.utc) - timedelta(minutes=minutes, hours=hours)
+    ).isoformat(timespec="seconds")
+
+
+def _clean_history_text(value, limit):
+    return str(value or "").strip()[:limit]
+
+
+def _clean_history_url(value):
+    url = _clean_history_text(value, 2000)
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return ""
+    return url
+
+
+def _clean_reference_snapshot(value):
+    refs = []
+    if not isinstance(value, list):
+        return refs
+    for item in value[:300]:
+        if not isinstance(item, dict):
+            continue
+        url = _clean_history_url(item.get("url"))
+        if not url:
+            continue
+        refs.append({
+            "url": url,
+            "propertyId": _clean_history_text(item.get("propertyId"), 32).upper(),
+            "propertyLabel": _clean_history_text(item.get("propertyLabel"), 200),
+            "statementValue": _clean_history_text(item.get("statementValue"), 300),
+        })
+    return refs
+
+
+def record_search_history(qid, label, description, results):
+    """Store a successful validation for the signed-in user."""
+    user = _history_user()
+    if not user:
+        return
+
+    results = results or []
+    counts = {
+        "total": len(results),
+        "alive": sum(1 for ref in results if ref.get("status") == "alive"),
+        "dead": sum(1 for ref in results if ref.get("status") == "dead"),
+        "archived": sum(
+            1 for ref in results
+            if ref.get("status") == "dead" and ref.get("suggestedArchive")
+        ),
+    }
+    qid = _clean_history_text(qid, 32).upper()
+    label = _clean_history_text(label, 300) or qid
+    description = _clean_history_text(description, 500)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    cutoff = _history_cutoff(minutes=10)
+
+    try:
+        with _history_db() as conn:
+            # Consecutive re-validations of the same item refresh one row
+            # instead of filling the history with duplicates.
+            recent = conn.execute(
+                """
+                SELECT id FROM search_history
+                WHERE user_id = ? AND qid = ? AND created_at >= ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                (user["id"], qid, cutoff),
+            ).fetchone()
+            if recent:
+                conn.execute(
+                    """
+                    UPDATE search_history
+                    SET username = ?, label = ?, description = ?, total = ?,
+                        alive = ?, dead = ?, archived = ?, created_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        user["name"], label, description, counts["total"],
+                        counts["alive"], counts["dead"], counts["archived"],
+                        now, recent["id"],
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO search_history
+                        (user_id, username, qid, label, description, total,
+                         alive, dead, archived, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user["id"], user["name"], qid, label, description,
+                        counts["total"], counts["alive"], counts["dead"],
+                        counts["archived"], now,
+                    ),
+                )
+    except Exception:
+        app.logger.warning("Could not save search history", exc_info=True)
+
+
+def record_edit_click(data):
+    """Store an Edit-link click and a snapshot of the item's references.
+
+    The snapshot is compared with the next successful validation of the same
+    item, which lets us show the original reference URL and the new one.
+    """
+    user = _history_user()
+    if not user:
+        return None
+
+    data = data if isinstance(data, dict) else {}
+    qid = _clean_history_text(data.get("qid"), 32).upper()
+    if not re.fullmatch(r"Q\d+", qid):
+        raise ValueError("A valid Wikidata QID is required.")
+
+    label = _clean_history_text(data.get("label"), 300) or qid
+    property_id = _clean_history_text(data.get("propertyId"), 32).upper()
+    if not re.fullmatch(r"P\d+", property_id):
+        property_id = ""
+    property_label = _clean_history_text(data.get("propertyLabel"), 200)
+    statement_value = _clean_history_text(data.get("statementValue"), 300)
+    original_url = _clean_history_url(data.get("url"))
+    before = _clean_reference_snapshot(data.get("references"))
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    cutoff = _history_cutoff(hours=1)
+
+    try:
+        with _history_db() as conn:
+            recent = conn.execute(
+                """
+                SELECT id FROM edit_history
+                WHERE user_id = ? AND qid = ? AND property_id = ?
+                  AND original_url = ? AND status = 'pending'
+                  AND created_at >= ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                (user["id"], qid, property_id, original_url, cutoff),
+            ).fetchone()
+
+            if recent:
+                conn.execute(
+                    """
+                    UPDATE edit_history
+                    SET username = ?, label = ?, property_label = ?,
+                        statement_value = ?, before_json = ?, created_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        user["name"], label, property_label, statement_value,
+                        json.dumps(before, ensure_ascii=False), now,
+                        recent["id"],
+                    ),
+                )
+                return recent["id"]
+
+            cursor = conn.execute(
+                """
+                INSERT INTO edit_history
+                    (user_id, username, qid, label, property_id, property_label,
+                     statement_value, original_url, before_json, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                """,
+                (
+                    user["id"], user["name"], qid, label, property_id,
+                    property_label, statement_value, original_url,
+                    json.dumps(before, ensure_ascii=False), now,
+                ),
+            )
+            return cursor.lastrowid
+    except Exception:
+        app.logger.warning("Could not save edit history", exc_info=True)
+        raise
+
+
+def reconcile_pending_edits(qid, results):
+    """Compare pending edit snapshots with freshly validated references."""
+    user = _history_user()
+    if not user:
+        return
+
+    current = []
+    for ref in results or []:
+        url = _clean_history_url(ref.get("url"))
+        if not url:
+            continue
+        current.append({
+            "url": url,
+            "propertyId": _clean_history_text(ref.get("propertyId"), 32).upper(),
+            "propertyLabel": _clean_history_text(ref.get("propertyLabel"), 200),
+            "statementValue": _clean_history_text(ref.get("statementValue"), 300),
+        })
+
+    current_keys = {(ref["url"], ref["propertyId"]) for ref in current}
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    try:
+        with _history_db() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, property_id, original_url, before_json
+                FROM edit_history
+                WHERE user_id = ? AND qid = ? AND status = 'pending'
+                ORDER BY created_at ASC, id ASC
+                LIMIT 50
+                """,
+                (user["id"], qid.upper()),
+            ).fetchall()
+
+            for row in rows:
+                try:
+                    before = json.loads(row["before_json"] or "[]")
+                except (TypeError, ValueError):
+                    before = []
+                if not isinstance(before, list):
+                    before = []
+                before = [
+                    ref for ref in before
+                    if isinstance(ref, dict) and ref.get("url")
+                ]
+                before_keys = {
+                    (ref.get("url"), _clean_history_text(ref.get("propertyId"), 32).upper())
+                    for ref in before
+                }
+
+                removed = [
+                    ref for ref in before
+                    if (ref.get("url"), _clean_history_text(ref.get("propertyId"), 32).upper())
+                    not in current_keys
+                ]
+                added = [
+                    ref for ref in current
+                    if (ref["url"], ref["propertyId"]) not in before_keys
+                ]
+
+                original_url = row["original_url"] or ""
+                property_id = _clean_history_text(row["property_id"], 32).upper()
+
+                # Leave reference-specific edits pending until the clicked
+                # URL itself is no longer present in the new snapshot.
+                if original_url and (original_url, property_id) in current_keys:
+                    continue
+                if not removed and not added:
+                    continue
+
+                new_url = ""
+                if property_id:
+                    same_property = [
+                        ref for ref in added
+                        if ref["propertyId"] == property_id
+                    ]
+                    if len(same_property) == 1:
+                        new_url = same_property[0]["url"]
+                if not new_url and len(added) == 1:
+                    new_url = added[0]["url"]
+
+                change = {"removed": removed, "added": added}
+                conn.execute(
+                    """
+                    UPDATE edit_history
+                    SET status = 'completed', new_url = ?, change_json = ?,
+                        completed_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        new_url, json.dumps(change, ensure_ascii=False),
+                        now, row["id"],
+                    ),
+                )
+    except Exception:
+        app.logger.warning("Could not reconcile edit history", exc_info=True)
+
+
+def fetch_search_history(user_id, limit=100, offset=0):
+    try:
+        with _history_db() as conn:
+            rows = conn.execute(
+                """
+                SELECT qid, label, description, total, alive, dead,
+                       archived, created_at
+                FROM search_history
+                WHERE user_id = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (user_id, limit, offset),
+            ).fetchall()
+            return [dict(row) for row in rows]
+    except Exception:
+        app.logger.warning("Could not load search history", exc_info=True)
+        return []
+
+
+def count_search_history(user_id):
+    try:
+        with _history_db() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS total FROM search_history WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            return int(row["total"]) if row else 0
+    except Exception:
+        app.logger.warning("Could not count search history", exc_info=True)
+        return 0
+
+
+def fetch_edit_history(user_id, limit=100):
+    try:
+        with _history_db() as conn:
+            rows = conn.execute(
+                """
+                SELECT qid, label, property_id, property_label,
+                       statement_value, original_url, new_url, change_json,
+                       status, created_at, completed_at
+                FROM edit_history
+                WHERE user_id = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+    except Exception:
+        app.logger.warning("Could not load edit history", exc_info=True)
+        return []
+
+    edits = []
+    for row in rows:
+        item = dict(row)
+        try:
+            change = json.loads(item.pop("change_json", "") or "{}")
+        except (TypeError, ValueError):
+            change = {}
+        if not isinstance(change, dict):
+            change = {}
+        item["removed"] = change.get("removed", [])
+        item["added"] = change.get("added", [])
+        edits.append(item)
+    return edits
+
+
+@app.template_filter("history_time")
+def history_time(value):
+    try:
+        moment = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return value or ""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.strftime("%d %b %Y, %H:%M UTC")
+
+
+# ---------------------------------------------------
 # ROUTES
 # ---------------------------------------------------
 @app.route("/")
@@ -392,6 +825,96 @@ def use():
 @app.route("/report")
 def report():
     return render_template("report.html")
+
+
+@app.route("/contributions")
+def contributions():
+    user = _history_user()
+    if not user:
+        return redirect(url_for("login"))
+
+    total_searches = count_search_history(user["id"])
+    total_pages = max(
+        1,
+        (total_searches + SEARCH_HISTORY_PAGE_SIZE - 1)
+        // SEARCH_HISTORY_PAGE_SIZE,
+    )
+    page = request.args.get("page", default=1, type=int) or 1
+    page = min(max(page, 1), total_pages)
+
+    searches = fetch_search_history(
+        user["id"],
+        limit=SEARCH_HISTORY_PAGE_SIZE,
+        offset=(page - 1) * SEARCH_HISTORY_PAGE_SIZE,
+    )
+    search_start = (
+        (page - 1) * SEARCH_HISTORY_PAGE_SIZE + 1
+        if total_searches else 0
+    )
+    search_end = min(page * SEARCH_HISTORY_PAGE_SIZE, total_searches)
+
+    return render_template(
+        "history.html",
+        searches=searches,
+        edits=fetch_edit_history(user["id"]),
+        search_page=page,
+        search_total=total_searches,
+        search_total_pages=total_pages,
+        search_start=search_start,
+        search_end=search_end,
+    )
+
+
+@app.route("/history")
+def history_redirect():
+    """Keep old bookmarks and links working."""
+    return redirect(url_for("contributions", **request.args.to_dict(flat=True)))
+
+
+@app.route("/contributions/clear", methods=["POST"])
+@app.route("/history/clear", methods=["POST"])
+def clear_history():
+    user = _history_user()
+    if not user:
+        return redirect(url_for("login"))
+
+    table = {
+        "searches": "search_history",
+        "edits": "edit_history",
+    }.get(request.form.get("kind"))
+    if table:
+        try:
+            with _history_db() as conn:
+                conn.execute(
+                    f"DELETE FROM {table} WHERE user_id = ?",
+                    (user["id"],),
+                )
+        except Exception:
+            app.logger.warning("Could not clear history", exc_info=True)
+    return redirect(url_for("contributions"))
+
+
+@app.route("/api/history/edit-click", methods=["POST"])
+def history_edit_click():
+    if not _history_user():
+        return jsonify({"error": "Log in to record edit activity."}), 401
+
+    data = request.get_json(silent=True) or {}
+    try:
+        record_id = record_edit_click(data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception:
+        return jsonify({"error": "Could not record edit activity."}), 500
+
+    return jsonify({"ok": True, "id": record_id})
+
+
+@app.after_request
+def no_store_history_pages(response):
+    if request.endpoint in ("contributions", "history_redirect", "clear_history"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/search")
@@ -676,6 +1199,8 @@ def validate_references():
                                 all_ids_to_label.add(prop)
 
         if not refs_data:
+            record_search_history(qid, entity_label, entity_desc, [])
+            reconcile_pending_edits(qid, [])
             return jsonify({
                 "message": f"No external URL references found on {entity_label} ({qid}).",
                 "qid": qid,
@@ -732,6 +1257,9 @@ def validate_references():
 
         # Sort dead links first so editors see broken references immediately
         results.sort(key=lambda r: (0 if r["status"] == "dead" else 1, r["propertyLabel"]))
+
+        record_search_history(qid, entity_label, entity_desc, results)
+        reconcile_pending_edits(qid, results)
 
         return jsonify({
             "qid": qid,

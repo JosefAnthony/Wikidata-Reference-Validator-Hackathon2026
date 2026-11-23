@@ -8,7 +8,7 @@ venv/
 # Ignore main config file
 /config.py
 
-# Local environment / OAuth credentials
+# Local environment variables / OAuth credentials
 .env
 .env.*
 !.env.example
@@ -16,3 +16,5 @@ venv/
 # OAuth debugging output
 oauth_debug.log
 
+# Local SQLite history database
+instance/
